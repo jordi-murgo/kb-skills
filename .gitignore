@@ -1,0 +1,8 @@
+# Per-project config lives in the consuming vault, never here
+kb-config.json
+__pycache__/
+
+# Local tooling state, not part of the skill source
+.atl/
+.opendevbrowser/
+.opencode/

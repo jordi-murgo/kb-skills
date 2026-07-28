@@ -1,0 +1,74 @@
+# Per-project config for the kb-skills pipelines.
+# Copy to kb-config.yaml at your vault root and fill in.
+#
+# Every value here used to be hardcoded in the scripts. Nothing project-specific
+# belongs in skill code.
+#
+# PATHS ARE RELATIVE to the vault root. Absolute paths, ~ and .. traversal are
+# rejected — the scripts refuse to run rather than write outside the vault. This
+# is enforced, not conventional: Python lets an absolute value replace the root
+# entirely while PowerShell's Join-Path does not, so the same file would mean two
+# different things depending on which pipeline read it.
+#
+# CREDENTIALS never live here. Jira reads ATLASIAN_EMAIL and ATLASIAN_API_KEY
+# from the environment or .env.local.
+#
+# JSON is still accepted (kb-config.json) so projects can migrate at their own
+# pace. YAML needs PyYAML in Python; graph-fetch.ps1 installs powershell-yaml on
+# demand, the same way it installs the Microsoft.Graph modules.
+
+project:
+  name: myproject
+  keywords:
+    - myproject
+    - add terms that identify your project in mail and chat
+
+jira:
+  enabled: false
+  base_url: https://yourorg.atlassian.net
+  project_key: PROJ
+  output_dir: .raw/jira
+
+gitlab_wiki:
+  enabled: false
+  repo: git@git.example.com:user/project.wiki.git
+  branch: main
+  # push.sh resolves vpn_host and aborts unless it lands under
+  # vpn_private_prefix. Set vpn_required to false outside a corporate network.
+  vpn_required: true
+  vpn_host: git.example.com
+  vpn_private_prefix: "10."
+
+m365:
+  enabled: false
+
+  modules:
+    emails: true
+    chats: true
+    teams_channels: true
+    attachments: true
+    chat_attachments: true
+    # transcripts requires the OnlineMeetingTranscript.Read.All delegated scope,
+    # which needs admin consent. Enabling it without consent makes the whole
+    # sign-in fail, not just this module.
+    transcripts: false
+    sharepoint: false
+
+  # Enabling sharepoint requires site_host and site_path.
+  sharepoint:
+    site_host: ""
+    site_path: ""
+    folder_path: ""
+    max_depth: 3
+
+  output:
+    dir: .raw/msoffice
+    attachments_dir: .raw/msoffice/attachments
+    chat_attachments_dir: .raw/msoffice/chat-attachments
+    transcripts_dir: .raw/msoffice/transcripts
+    sharepoint_dir: .raw/sharepoint
+
+  window:
+    hours: 24
+    top: 100
+    chat_limit: 50
