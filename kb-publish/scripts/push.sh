@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
-# push.sh — hace push al repo principal y despliega el wiki a GitLab
-# Uso: ./.agents/skills/kb-publish/scripts/push.sh [args de git push]
+# push.sh — pushes to the main repo and deploys the wiki to GitLab
+# Usage: ./.agents/skills/kb-publish/scripts/push.sh [git push args]
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Este script vive dentro de una skill, así que su profundidad bajo la raíz del
-# repo depende de dónde esté instalada. Subimos buscando los marcadores en lugar
-# de contar niveles, que se rompe en cuanto la skill se mueve.
-# Se exigen wiki/ Y .git: existe un directorio de skill llamado "wiki" bajo
-# .agents/skills/, así que el marcador wiki/ por sí solo resuelve al directorio
-# de skills en vez de a la raíz del repo.
+# This script lives inside a skill, so its depth below the repo root depends on
+# where the skill is installed. Walk up looking for the markers instead of
+# counting levels, which breaks the moment the skill moves.
+# Both wiki/ AND .git are required: there is a skill directory named "wiki"
+# under .agents/skills/, so the wiki/ marker alone resolves to the skills
+# directory instead of the repo root.
 REPO_DIR="$SCRIPT_DIR"
 while [ "$REPO_DIR" != "/" ] && ! { [ -d "$REPO_DIR/wiki" ] && [ -e "$REPO_DIR/.git" ]; }; do
     REPO_DIR="$(dirname "$REPO_DIR")"
 done
 if ! { [ -d "$REPO_DIR/wiki" ] && [ -e "$REPO_DIR/.git" ]; }; then
-    echo "❌ Raíz del repo no encontrada: ningún directorio superior tiene wiki/ y .git"
+    echo "❌ Repo root not found: no ancestor has both wiki/ and .git"
     exit 1
 fi
 cd "$REPO_DIR"
 
-# Configuración del proyecto — nada específico de un proyecto vive en este script
+# Project configuration — nothing project-specific lives in this script
 CFG="$REPO_DIR/kb-config.json"
 if [ ! -f "$CFG" ]; then
-    echo "❌ Config no encontrada: $CFG"
-    echo "   Copia kb-config.example.json del repo kb-skills y complétala."
+    echo "❌ Config not found: $CFG"
+    echo "   Copy kb-config.example.json from the kb-skills repo and fill it in."
     exit 1
 fi
 read_cfg() { python3 -c "
@@ -39,36 +39,36 @@ VPN_REQUIRED=$(read_cfg vpn_required true)
 VPN_HOST=$(read_cfg vpn_host "")
 VPN_PREFIX=$(read_cfg vpn_private_prefix "10.")
 
-# Verificar VPN — el host debe resolver a una IP privada
+# Verify VPN — the host must resolve to a private IP
 if [ "$VPN_REQUIRED" = "true" ]; then
     if [ -z "$VPN_HOST" ]; then
-        echo "❌ gitlab_wiki.vpn_required es true pero falta vpn_host en kb-config.json"
+        echo "❌ gitlab_wiki.vpn_required is true but vpn_host is missing in kb-config.json"
         exit 1
     fi
     GIT_IP=$(host "$VPN_HOST" 2>/dev/null | awk '/has address/ {print $NF}' | head -1)
     if [ -z "$GIT_IP" ]; then
-        echo "❌ No se puede resolver $VPN_HOST — ¿DNS funcionando?"
+        echo "❌ Cannot resolve $VPN_HOST — is DNS working?"
         exit 1
     fi
     case "$GIT_IP" in
         "$VPN_PREFIX"*)
-            echo "🔒 VPN activa ($VPN_HOST → $GIT_IP)" ;;
+            echo "🔒 VPN active ($VPN_HOST → $GIT_IP)" ;;
         *)
-            echo "⚠️  VPN NO activa — $VPN_HOST resuelve a $GIT_IP (fuera de $VPN_PREFIX*)"
-            echo "   Conecta la VPN antes de hacer push."
+            echo "⚠️  VPN NOT active — $VPN_HOST resolves to $GIT_IP (outside $VPN_PREFIX*)"
+            echo "   Connect the VPN before pushing."
             exit 1 ;;
     esac
 fi
 
-# Push al repo principal
-echo "📦 Push al repo principal..."
+# Push to the main repo
+echo "📦 Pushing to the main repo..."
 git push "$@"
 
-# Si hay cambios en wiki/, desplegar
+# If there are changes in wiki/, deploy
 CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep "^wiki/" | head -1)
 if [ -n "$CHANGED" ]; then
-    echo "📋 Cambios en wiki/ detectados — desplegando a GitLab Wiki..."
+    echo "📋 Changes in wiki/ detected — deploying to GitLab Wiki..."
     python3 "$SCRIPT_DIR/deploy-gitlab-wiki.py"
 else
-    echo "ℹ No hay cambios en wiki/ — skip deploy"
+    echo "ℹ No changes in wiki/ — skip deploy"
 fi

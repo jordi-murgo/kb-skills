@@ -5,8 +5,7 @@ description: >
   make skills discoverable, set up the deterministic lint gates, and connect the
   M365 / Jira / GitLab source pipelines. Use when bootstrapping a new KB project
   or repairing an existing one. Triggers on: "set up the KB", "configure the
-  knowledge base", "bootstrap kb", "repair skills", "configura el KB",
-  "configurar la KB", "/kb-setup".
+  knowledge base", "bootstrap kb", "repair skills", "/kb-setup".
 allowed-tools: Read Write Edit Bash Grep Glob
 ---
 

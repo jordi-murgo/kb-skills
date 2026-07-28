@@ -3,8 +3,7 @@ name: kb-jira-sync
 description: >
   Refresh the vault's raw Jira data from the Jira REST API, then reconcile the
   derived wiki issue pages against it. Triggers on: "sync jira", "import jira",
-  "refresh jira issues", "update the tickets", "actualiza jira",
-  "sincronitza jira", "/kb-jira-sync".
+  "refresh jira issues", "update the tickets", "/kb-jira-sync".
 allowed-tools: Read Edit Bash Grep Glob
 ---
 

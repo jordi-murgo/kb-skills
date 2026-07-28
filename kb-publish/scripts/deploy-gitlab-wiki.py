@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Despliega el wiki (wiki/) en el repositorio GitLab Wiki.
+Deploys the wiki (wiki/) to the GitLab Wiki repository.
 
-Uso:
+Usage:
     python3 scripts/deploy-gitlab-wiki.py [--dry-run] [--no-push]
 
-    --dry-run: prepara archivos en un directorio temporal pero no clona ni hace push.
-               Imprime un resumen de lo que se haría.
-    --no-push: clona y prepara pero no hace push. Deja el directorio temporal para inspección.
-    Por defecto: despliegue completo con push.
+    --dry-run: prepares files in a temporary directory but does not clone or push.
+               Prints a summary of what would be done.
+    --no-push: clones and prepares but does not push. Leaves the temporary directory for inspection.
+    Default: full deployment with push.
 
-Requisitos:
-    - git instalado y acceso SSH al wiki repo (configurado en kb-config.yaml)
+Requirements:
+    - git installed and SSH access to the wiki repo (configured in kb-config.yaml)
     - Python 3.8+
 """
 
@@ -26,7 +26,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-# ─── Configuración ───────────────────────────────────────────────────────────
+# ─── Configuration ───────────────────────────────────────────────────────────
 
 def find_repo_root() -> Path:
     """Walk up from this file to the vault root (the directory holding wiki/).
@@ -112,40 +112,40 @@ if WIKI_TARGET not in ("github", "gitlab"):
     )
 HOME_FILENAME = "Home.md" if WIKI_TARGET == "github" else "home.md"
 
-# Directorios a excluir del wiki
+# Directories to exclude from the wiki
 EXCLUDE_DIRS = set()
 
-# Patrón para wikilinks: [[target]] o [[target|display text]]
+# Pattern for wikilinks: [[target]] or [[target|display text]]
 WIKILINK_RE = re.compile(r"\[\[([^\[\]]+?)\]\]")
 
-# Patrón para frontmatter YAML
+# Pattern for YAML frontmatter
 FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
-# ─── Utilidades ─────────────────────────────────────────────────────────────
+# ─── Utilities ──────────────────────────────────────────────────────────────
 
 
 def info(msg: str) -> None:
-    """Imprime un mensaje informativo."""
+    """Prints an informational message."""
     print(f"  • {msg}")
 
 
 def ok(msg: str) -> None:
-    """Imprime un mensaje de éxito."""
+    """Prints a success message."""
     print(f"  ✓ {msg}")
 
 
 def warn(msg: str) -> None:
-    """Imprime una advertencia."""
+    """Prints a warning."""
     print(f"  ⚠ {msg}")
 
 
 def error(msg: str) -> None:
-    """Imprime un error."""
+    """Prints an error."""
     print(f"  ✗ {msg}", file=sys.stderr)
 
 
 def run_cmd(cmd: list[str], cwd: str | None = None, dry_run: bool = False) -> subprocess.CompletedProcess:
-    """Ejecuta un comando y devuelve el resultado. En dry-run solo imprime."""
+    """Runs a command and returns the result. In dry-run mode only prints."""
     if dry_run:
         print(f"    [dry-run] $ {' '.join(cmd)}")
         return subprocess.CompletedProcess(cmd, 0, stdout=b"", stderr=b"")
@@ -158,45 +158,45 @@ def run_cmd(cmd: list[str], cwd: str | None = None, dry_run: bool = False) -> su
             check=False,
         )
         if result.returncode != 0:
-            error(f"Comando falló: {' '.join(cmd)}")
+            error(f"Command failed: {' '.join(cmd)}")
             error(f"stderr: {result.stderr.strip()}")
         return result
     except FileNotFoundError:
-        error(f"Comando no encontrado: {cmd[0]}. ¿Está instalado?")
+        error(f"Command not found: {cmd[0]}. Is it installed?")
         sys.exit(1)
 
 
-# ─── Construcción del mapa de slugs ─────────────────────────────────────────
+# ─── Build slug map ─────────────────────────────────────────────────────────
 
 
 def build_slug_map(wiki_dir: Path) -> dict[str, str]:
     """
-    Escanea wiki_dir buscando archivos .md y construye un mapa:
-      slug (sin extensión, relativo a wiki/) → ruta completa del archivo
+    Scans wiki_dir for .md files and builds a map:
+      slug (without extension, relative to wiki/) → full file path
 
-    También añade entradas para nombres "desnudos" (sin subdirectorio)
-    para que [[aitor-landa]] resuelva a entities/aitor-landa.
+    Also adds entries for "bare" names (without subdirectory)
+    so that [[aitor-landa]] resolves to entities/aitor-landa.
     """
     slug_map: dict[str, str] = {}
     wiki_dir_abs = wiki_dir.resolve()
 
     for md_file in sorted(wiki_dir.rglob("*.md")):
-        # Saltar archivos en directorios excluidos
+        # Skip files in excluded directories
         md_abs = md_file.resolve()
         try:
             rel = md_abs.relative_to(wiki_dir_abs)
         except ValueError:
-            # Si no es subpath (ej: symlinks), usar el path original
+            # If not a subpath (e.g. symlinks), use the original path
             rel = md_file.relative_to(wiki_dir)
         if any(part in EXCLUDE_DIRS for part in rel.parts):
             continue
 
-        # Slug = ruta relativa sin extensión .md
+        # Slug = relative path without .md extension
         slug = str(rel.with_suffix(""))
         slug_map[slug] = str(md_abs)
 
-        # También registrar el nombre base (último componente) para resolución
-        # de wikilinks sin ruta: [[aitor-landa]] → entities/aitor-landa
+        # Also register the base name (last component) for resolving
+        # wikilinks without path: [[aitor-landa]] → entities/aitor-landa
         bare_name = rel.stem
         if bare_name not in slug_map:
             slug_map[bare_name] = str(md_abs)
@@ -204,20 +204,20 @@ def build_slug_map(wiki_dir: Path) -> dict[str, str]:
     return slug_map
 
 
-# ─── Conversión de wikilinks ────────────────────────────────────────────────
+# ─── Wikilink conversion ─────────────────────────────────────────────────────
 
 
 def convert_wikilinks(content: str, slug_map: dict[str, str]) -> tuple[str, list[str]]:
     """
-    Convierte wikilinks a formato GitLab wiki.
+    Converts wikilinks to GitLab wiki format.
 
-    - [[target]] → [[ruta/completa]] si target resuelve en slug_map
-    - [[target|display]] → [[display|ruta/completa]] si target resuelve
-    - Si target ya contiene '/' se deja como está (ya tiene ruta)
-    - Si target empieza con '.' se deja como está (referencia a fuente raw)
-    - Si target no resuelve, se deja como está y se reporta como broken
+    - [[target]] → [[full/path]] if target resolves in slug_map
+    - [[target|display]] → [[display|full/path]] if target resolves
+    - If target already contains '/' it is left as is (already has a path)
+    - If target starts with '.' it is left as is (raw source reference)
+    - If target does not resolve, it is left as is and reported as broken
 
-    Devuelve: (contenido convertido, lista de broken links)
+    Returns: (converted content, list of broken links)
     """
     broken_links: list[str] = []
 
@@ -226,20 +226,20 @@ def convert_wikilinks(content: str, slug_map: dict[str, str]) -> tuple[str, list
         display = None
         target = inner
 
-        # Separar target y display text si existe
+        # Separate target and display text if present
         if "|" in inner:
             target, display = inner.split("|", 1)
             target = target.strip()
             display = display.strip()
 
-        # Si ya tiene ruta o es referencia a fuente raw, dejar como está
+        # If it already has a path or is a raw source reference, leave as is
         if "/" in target or target.startswith("."):
             return m.group(0)
 
-        # Buscar en el mapa de slugs
+        # Look up in the slug map
         if target in slug_map:
             resolved = Path(slug_map[target])
-            # Asegurar ruta absoluta para relative_to
+            # Ensure absolute path for relative_to
             if not resolved.is_absolute():
                 resolved = (WIKI_DIR.parent / resolved).resolve()
             else:
@@ -249,12 +249,12 @@ def convert_wikilinks(content: str, slug_map: dict[str, str]) -> tuple[str, list
             gitlab_slug = str(rel.with_suffix(""))
 
             if display:
-                # GitLab: [[display|ruta]]
+                # GitLab: [[display|path]]
                 return f"[[{display}|{gitlab_slug}]]"
             else:
                 return f"[[{gitlab_slug}]]"
         else:
-            # No resuelve — broken link
+            # Does not resolve — broken link
             if target not in broken_links:
                 broken_links.append(target)
             return m.group(0)
@@ -263,13 +263,13 @@ def convert_wikilinks(content: str, slug_map: dict[str, str]) -> tuple[str, list
     return result, broken_links
 
 
-# ─── Conversión de frontmatter ──────────────────────────────────────────────
+# ─── Frontmatter conversion ─────────────────────────────────────────────────
 
 
 def convert_frontmatter(content: str) -> str:
     """
-    Convierte frontmatter YAML (--- ... ---) a comentario HTML
-    para que no se renderice como texto visible en GitLab Wiki.
+    Converts YAML frontmatter (--- ... ---) to an HTML comment
+    so it does not render as visible text in GitLab Wiki.
     """
     def replace_fm(m: re.Match) -> str:
         yaml_content = m.group(1)
@@ -278,7 +278,7 @@ def convert_frontmatter(content: str) -> str:
     return FRONTMATTER_RE.sub(replace_fm, content)
 
 
-# ─── Procesamiento de archivos ──────────────────────────────────────────────
+# ─── File processing ──────────────────────────────────────────────────────────
 
 
 def process_file(
@@ -286,8 +286,8 @@ def process_file(
     slug_map: dict[str, str],
 ) -> tuple[str, list[str]]:
     """
-    Lee un archivo .md, convierte frontmatter y wikilinks.
-    Devuelve: (contenido procesado, lista de broken links encontrados)
+    Reads a .md file, converts frontmatter and wikilinks.
+    Returns: (processed content, list of broken links found)
     """
     content = md_path.read_text(encoding="utf-8")
 
@@ -300,13 +300,13 @@ def process_file(
     return content, broken
 
 
-# ─── Generación de páginas especiales ──────────────────────────────────────
+# ─── Special page generation ────────────────────────────────────────────────
 
 
 def read_dashboard_body() -> str | None:
     """
-    Lee wiki/dashboard.md y devuelve su cuerpo sin frontmatter ni el primer H1.
-    Devuelve None si el archivo no existe.
+    Reads wiki/dashboard.md and returns its body without frontmatter or the first H1.
+    Returns None if the file does not exist.
     """
     dashboard = WIKI_DIR / "dashboard.md"
     if not dashboard.exists():
@@ -319,8 +319,8 @@ def read_dashboard_body() -> str | None:
 
 def list_wiki_sections() -> list[tuple[str, int]]:
     """
-    Devuelve (nombre_dir, nº de páginas .md) para cada subdirectorio de primer
-    nivel del wiki que contenga páginas, ordenado alfabéticamente.
+    Returns (directory_name, number of .md pages) for each first-level
+    subdirectory of the wiki that contains pages, sorted alphabetically.
     """
     wiki_dir_abs = WIKI_DIR.resolve()
     sections: list[tuple[str, int]] = []
@@ -338,11 +338,11 @@ def list_wiki_sections() -> list[tuple[str, int]]:
 
 def generate_home(slug_map: dict[str, str]) -> str:
     """
-    Genera la página de inicio (Home.md para GitHub, home.md para GitLab)
-    con enlaces a las páginas principales.
-    Usa el formato de wikilink convertido (ya con rutas completas).
+    Generates the home page (Home.md for GitHub, home.md for GitLab)
+    with links to the main pages.
+    Uses the converted wikilink format (already with full paths).
     """
-    # Resolver slugs para las páginas clave
+    # Resolve slugs for key pages
     def link(name: str, display: str | None = None) -> str:
         if name in slug_map:
             rel = Path(slug_map[name]).relative_to(WIKI_DIR.resolve())
@@ -355,7 +355,7 @@ def generate_home(slug_map: dict[str, str]) -> str:
     lines = [
         "# Project Wiki",
         "",
-        "Wiki del proyecto.",
+        "Project Wiki.",
         "",
         "---",
         "",
@@ -365,46 +365,46 @@ def generate_home(slug_map: dict[str, str]) -> str:
     if dashboard_body:
         resolved_body, broken = convert_wikilinks(dashboard_body, slug_map)
         if broken:
-            warn(f"dashboard.md: wikilinks sin resolver: {', '.join(broken)}")
+            warn(f"dashboard.md: unresolved wikilinks: {', '.join(broken)}")
         lines += [
             "## Dashboard",
             "",
             resolved_body,
             "",
-            f"> Fuente: {link('dashboard')}",
+            f"> Source: {link('dashboard')}",
             "",
             "---",
             "",
         ]
 
     lines += [
-        "## Navegación rápida",
+        "## Quick Navigation",
         "",
-        f"- {link('index', 'Índice completo')} — todas las páginas del wiki",
-        f"- {link('overview', 'Resumen ejecutivo')} — visión general del proyecto",
-        f"- {link('hot', 'Contexto reciente')} — últimas novedades y decisiones",
-        f"- {link('log', 'Operation Log')} — registro cronológico de cambios",
+        f"- {link('index', 'Full Index')} — all wiki pages",
+        f"- {link('overview', 'Executive Summary')} — project overview",
+        f"- {link('hot', 'Recent Context')} — latest updates and decisions",
+        f"- {link('log', 'Operation Log')} — chronological change log",
         "",
     ]
 
     sections = list_wiki_sections()
     if sections:
         lines += [
-            "## Secciones",
+            "## Sections",
             "",
         ]
         for name, count in sections:
             title = name.replace("-", " ").replace("_", " ").title()
-            noun = "página" if count == 1 else "páginas"
+            noun = "page" if count == 1 else "pages"
             lines.append(f"- [[{title}|{name}]] — {count} {noun}")
         lines.append("")
 
     lines += [
-        "## Fuentes",
+        "## Sources",
         "",
     ]
 
-    # Enlaces a fuentes
+    # Links to sources
     sources = [k for k in slug_map if k.startswith("sources/")]
     for s in sources:
         rel = Path(slug_map[s]).relative_to(WIKI_DIR.resolve())
@@ -413,7 +413,7 @@ def generate_home(slug_map: dict[str, str]) -> str:
 
     lines += [
         "",
-        "## Entidades",
+        "## Entities",
         "",
     ]
 
@@ -425,7 +425,7 @@ def generate_home(slug_map: dict[str, str]) -> str:
 
     lines += [
         "",
-        "## Conceptos",
+        "## Concepts",
         "",
     ]
 
@@ -439,8 +439,8 @@ def generate_home(slug_map: dict[str, str]) -> str:
         "",
         "---",
         "",
-        "> Este wiki se despliega automáticamente desde el repositorio.",
-        f"> Última actualización: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "> This wiki is automatically deployed from the repository.",
+        f"> Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         "",
     ]
 
@@ -449,23 +449,23 @@ def generate_home(slug_map: dict[str, str]) -> str:
 
 def generate_directory_indexes(slug_map: dict[str, str]) -> list[str]:
     """
-    Genera páginas índice planas para cada subdirectorio del wiki.
+    Generates flat index pages for each subdirectory of the wiki.
 
-    GitLab Wiki (Gollum) no reconoce _index.md como landing de un
-    subdirectorio: la URL /wikis/jira-issues busca una página con slug
-    exacto 'jira-issues'. Sin esta página, la URL devuelve 404 aunque
-    exista el directorio con páginas hijas.
+    GitLab Wiki (Gollum) does not recognize _index.md as a subdirectory
+    landing page: the URL /wikis/jira-issues looks for a page with the exact
+    slug 'jira-issues'. Without this page, the URL returns 404 even if the
+    directory with child pages exists.
 
-    Para cada subdirectorio de primer nivel bajo wiki/ que NO tenga ya
-    una página plana con su mismo nombre, se genera <dir>.md en la raíz
-    del wiki con un listado de las páginas hijas.
+    For each first-level subdirectory under wiki/ that does NOT already have
+    a flat page with the same name, <dir>.md is generated at the wiki root
+    with a listing of child pages.
 
-    Devuelve la lista de nombres de archivos generados (sin ruta).
+    Returns the list of generated filenames (without path).
     """
     wiki_dir_abs = WIKI_DIR.resolve()
     generated: list[str] = []
 
-    # Subdirectorios de primer nivel (excluyendo directorios vacíos)
+    # First-level subdirectories (excluding empty directories)
     subdirs = sorted(
         d for d in wiki_dir_abs.iterdir()
         if d.is_dir() and d.name not in EXCLUDE_DIRS and any(d.rglob("*.md"))
@@ -473,13 +473,13 @@ def generate_directory_indexes(slug_map: dict[str, str]) -> list[str]:
 
     for subdir in subdirs:
         dir_name = subdir.name
-        planar_slug = dir_name  # ej. "jira-issues"
+        planar_slug = dir_name  # e.g. "jira-issues"
 
-        # Si ya existe una página plana con este slug, no generar duplicado
+        # If a flat page with this slug already exists, do not generate a duplicate
         if planar_slug in slug_map:
             continue
 
-        # Recoger páginas hijas (slug relativo al wiki)
+        # Collect child pages (slug relative to wiki)
         child_slugs: list[str] = []
         for md_file in sorted(subdir.rglob("*.md")):
             if any(part in EXCLUDE_DIRS for part in md_file.relative_to(wiki_dir_abs).parts):
@@ -491,13 +491,13 @@ def generate_directory_indexes(slug_map: dict[str, str]) -> list[str]:
         if not child_slugs:
             continue
 
-        # Título legible
+        # Readable title
         title = dir_name.replace("-", " ").replace("_", " ").title()
 
         lines = [
             f"# {title}",
             "",
-            f"Páginas en la sección **{dir_name}**:",
+            f"Pages in section **{dir_name}**:",
             "",
         ]
         for slug in child_slugs:
@@ -505,16 +505,16 @@ def generate_directory_indexes(slug_map: dict[str, str]) -> list[str]:
 
         lines.append("")
 
-        # Escribir directamente en el directorio temporal NO es posible aquí
-        # porque aún no existe. El llamador (prepare_files) lo hace.
-        # Devolvemos el contenido para que prepare_files lo escriba.
+        # Writing directly to the temporary directory is NOT possible here
+        # because it does not exist yet. The caller (prepare_files) does it.
+        # We return the content so prepare_files can write it.
         generated.append(planar_slug)
 
     return generated
 
 
 def extract_page_title(md_file: Path) -> str:
-    """Extrae el título de una página: frontmatter, H1 o nombre de archivo."""
+    """Extracts the page title: frontmatter, H1, or filename."""
     content = md_file.read_text(encoding="utf-8")
 
     title_match = re.search(r"^title:\s*(.+?)\s*$", content, re.MULTILINE)
@@ -529,12 +529,12 @@ def extract_page_title(md_file: Path) -> str:
 
 
 def natural_sort_key(value: str) -> list[str | int]:
-    """Ordena texto con números de forma natural: 1, 2, 3, 10."""
+    """Sorts text with numbers naturally: 1, 2, 3, 10."""
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", value)]
 
 
 def escape_wikilink_display(title: str) -> str:
-    """Escapa caracteres que rompen el texto visible de un wikilink Gollum."""
+    """Escapes characters that break the visible text of a Gollum wikilink."""
     return (
         title.replace("&", "&amp;")
         .replace("[", "&#91;")
@@ -545,9 +545,9 @@ def escape_wikilink_display(title: str) -> str:
 
 def generate_directory_index_content(dir_name: str, slug_map: dict[str, str]) -> str:
     """
-    Devuelve el contenido Markdown de la página índice plana para un
-    subdirectorio dado. Usado por prepare_files para escribir <dir>.md
-    en la raíz del directorio temporal.
+    Returns the Markdown content of the flat index page for a given
+    subdirectory. Used by prepare_files to write <dir>.md
+    at the root of the temporary directory.
     """
     wiki_dir_abs = WIKI_DIR.resolve()
     subdir = wiki_dir_abs / dir_name
@@ -569,7 +569,7 @@ def generate_directory_index_content(dir_name: str, slug_map: dict[str, str]) ->
     lines = [
         f"# {title}",
         "",
-        f"{len(child_pages)} páginas en la sección **{dir_name}**:",
+        f"{len(child_pages)} pages in section **{dir_name}**:",
         "",
     ]
     for slug, display_title in child_pages:
@@ -580,8 +580,8 @@ def generate_directory_index_content(dir_name: str, slug_map: dict[str, str]) ->
 
 def generate_sidebar(slug_map: dict[str, str]) -> str:
     """
-    Genera _sidebar.md — barra lateral de navegación para GitLab Wiki.
-    Organizada por secciones.
+    Generates _sidebar.md — navigation sidebar for GitLab Wiki.
+    Organized by sections.
     """
     def link(name: str, display: str | None = None) -> str:
         if name in slug_map:
@@ -597,13 +597,13 @@ def generate_sidebar(slug_map: dict[str, str]) -> str:
         "",
         "### General",
         "",
-        f"- {link('home', 'Inicio')}",
-        f"- {link('index', 'Índice')}",
+        f"- {link('home', 'Home')}",
+        f"- {link('index', 'Index')}",
         f"- {link('overview', 'Overview')}",
-        f"- {link('hot', 'Contexto reciente')}",
+        f"- {link('hot', 'Recent Context')}",
         f"- {link('log', 'Operation Log')}",
         "",
-        "### Fuentes",
+        "### Sources",
         "",
     ]
 
@@ -611,13 +611,13 @@ def generate_sidebar(slug_map: dict[str, str]) -> str:
     for s in sources:
         rel = Path(slug_map[s]).relative_to(WIKI_DIR.resolve())
         slug = str(rel.with_suffix(""))
-        # Extraer título legible del nombre del archivo
+        # Extract readable title from filename
         display = rel.stem.replace("-", " ").replace("_", " ").title()
         lines.append(f"- [[{display}|{slug}]]")
 
     lines += [
         "",
-        "### Conceptos",
+        "### Concepts",
         "",
     ]
 
@@ -630,7 +630,7 @@ def generate_sidebar(slug_map: dict[str, str]) -> str:
 
     lines += [
         "",
-        "### Entidades",
+        "### Entities",
         "",
     ]
 
@@ -655,7 +655,7 @@ def generate_sidebar(slug_map: dict[str, str]) -> str:
 
     lines += [
         "",
-        "### Infraestructura",
+        "### Infrastructure",
         "",
     ]
 
@@ -668,7 +668,7 @@ def generate_sidebar(slug_map: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-# ─── Preparación de archivos en directorio temporal ────────────────────────
+# ─── Prepare files in temporary directory ───────────────────────────────────
 
 
 def prepare_files(
@@ -677,60 +677,60 @@ def prepare_files(
     dry_run: bool = False,
 ) -> tuple[Path, list[str]]:
     """
-    Prepara todos los archivos del wiki en un directorio temporal:
-    1. Copia archivos preservando subdirectorios
-    2. Convierte frontmatter y wikilinks
-    3. Genera página de inicio (Home.md/home.md) y _sidebar.md
+    Prepares all wiki files in a temporary directory:
+    1. Copies files preserving subdirectories
+    2. Converts frontmatter and wikilinks
+    3. Generates home page (Home.md/home.md) and _sidebar.md
 
-    Devuelve: (ruta al directorio temporal, lista de broken links global)
+    Returns: (path to temporary directory, list of global broken links)
     """
     all_broken_links: list[str] = []
     processed_count = 0
 
-    # Crear directorio temporal
+    # Create temporary directory
     tmp_dir = Path(tempfile.mkdtemp(prefix="kb-wiki-"))
-    info(f"Directorio temporal: {tmp_dir}")
+    info(f"Temporary directory: {tmp_dir}")
 
-    # Copiar y procesar archivos
+    # Copy and process files
     for md_file in sorted(wiki_dir.rglob("*.md")):
         rel = md_file.relative_to(wiki_dir)
         if any(part in EXCLUDE_DIRS for part in rel.parts):
             continue
 
-        # Crear subdirectorios en el destino
+        # Create subdirectories in the destination
         dest_dir = tmp_dir / rel.parent
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest_file = tmp_dir / rel
 
-        # Procesar el archivo
+        # Process the file
         content, broken = process_file(md_file, slug_map)
         all_broken_links.extend(broken)
         dest_file.write_text(content, encoding="utf-8")
         processed_count += 1
 
-    # Generar página de inicio (Home.md para GitHub, home.md para GitLab)
+    # Generate home page (Home.md for GitHub, home.md for GitLab)
     home_content = generate_home(slug_map)
     (tmp_dir / HOME_FILENAME).write_text(home_content, encoding="utf-8")
-    ok(f"Generado {HOME_FILENAME}")
+    ok(f"Generated {HOME_FILENAME}")
 
-    # Generar _sidebar.md
+    # Generate _sidebar.md
     sidebar_content = generate_sidebar(slug_map)
     (tmp_dir / "_sidebar.md").write_text(sidebar_content, encoding="utf-8")
-    ok(f"Generado _sidebar.md")
+    ok(f"Generated _sidebar.md")
 
-    # Generar páginas índice planas para subdirectorios sin landing
+    # Generate flat index pages for subdirectories without a landing page
     index_dirs = generate_directory_indexes(slug_map)
     for dir_name in index_dirs:
         index_content = generate_directory_index_content(dir_name, slug_map)
         (tmp_dir / f"{dir_name}.md").write_text(index_content, encoding="utf-8")
-        ok(f"Generado {dir_name}.md (índice de sección)")
+        ok(f"Generated {dir_name}.md (section index)")
 
-    generated_count = 2 + len(index_dirs)  # home + sidebar + índices
-    info(f"Procesados {processed_count} archivos + {generated_count} páginas generadas")
+    generated_count = 2 + len(index_dirs)  # home + sidebar + indexes
+    info(f"Processed {processed_count} files + {generated_count} generated pages")
     return tmp_dir, all_broken_links
 
 
-# ─── Despliegue Git ─────────────────────────────────────────────────────────
+# ─── Git deployment ─────────────────────────────────────────────────────────
 
 
 def deploy_to_gitlab(
@@ -739,28 +739,28 @@ def deploy_to_gitlab(
     no_push: bool = False,
 ) -> None:
     """
-    Clona el repositorio wiki de GitLab, reemplaza el contenido,
-    hace commit y push.
+    Clones the GitLab wiki repository, replaces the content,
+    commits and pushes.
     """
     if dry_run:
-        info("Modo dry-run — no se clonará ni hará push")
+        info("Dry-run mode — will not clone or push")
         return
 
-    # Clonar el repositorio wiki
+    # Clone the wiki repository
     clone_dir = Path(tempfile.mkdtemp(prefix="kb-wiki-clone-"))
-    info(f"Clonando wiki repo en {clone_dir}...")
+    info(f"Cloning wiki repo in {clone_dir}...")
 
     result = run_cmd(
         ["git", "clone", WIKI_REPO, str(clone_dir)],
     )
     if result.returncode != 0:
-        error("No se pudo clonar el repositorio wiki")
-        # Limpiar
+        error("Could not clone the wiki repository")
+        # Clean up
         shutil.rmtree(tmp_dir, ignore_errors=True)
         shutil.rmtree(clone_dir, ignore_errors=True)
         sys.exit(1)
 
-    # Limpiar contenido existente (excepto .git)
+    # Clean existing content (except .git)
     for item in clone_dir.iterdir():
         if item.name == ".git":
             continue
@@ -769,15 +769,15 @@ def deploy_to_gitlab(
         else:
             item.unlink()
 
-    # Copiar archivos preparados
-    info("Copiando archivos preparados...")
+    # Copy prepared files
+    info("Copying prepared files...")
     for item in tmp_dir.iterdir():
         if item.is_dir():
             shutil.copytree(item, clone_dir / item.name, dirs_exist_ok=True)
         else:
             shutil.copy2(item, clone_dir / item.name)
 
-    # Hacer commit
+    # Commit
     commit_msg = f"deploy: wiki update {datetime.now().strftime('%Y-%m-%d')}"
     info(f"Commit: {commit_msg}")
 
@@ -785,29 +785,29 @@ def deploy_to_gitlab(
     run_cmd(["git", "commit", "-m", commit_msg], cwd=str(clone_dir))
 
     if no_push:
-        info("Modo --no-push — commit realizado pero sin push")
-        info(f"Directorio para inspección: {clone_dir}")
-        info(f"Para hacer push manualmente: cd {clone_dir} && git push origin {WIKI_BRANCH}")
+        info("--no-push mode — commit made but no push")
+        info(f"Inspection directory: {clone_dir}")
+        info(f"To push manually: cd {clone_dir} && git push origin {WIKI_BRANCH}")
     else:
-        info("Haciendo push...")
+        info("Pushing...")
         result = run_cmd(
             ["git", "push", "origin", WIKI_BRANCH],
             cwd=str(clone_dir),
         )
         if result.returncode == 0:
-            ok("Push completado exitosamente")
+            ok("Push completed successfully")
         else:
-            error("Push falló")
-            info(f"Puedes hacer push manualmente desde: {clone_dir}")
+            error("Push failed")
+            info(f"You can push manually from: {clone_dir}")
 
-        # Limpiar directorio de clon
+        # Clean up clone directory
         shutil.rmtree(clone_dir, ignore_errors=True)
 
-    # Limpiar directorio temporal de preparación
+    # Clean up temporary preparation directory
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-# ─── Resumen ────────────────────────────────────────────────────────────────
+# ─── Summary ────────────────────────────────────────────────────────────────
 
 
 def print_summary(
@@ -816,13 +816,13 @@ def print_summary(
     dry_run: bool,
     no_push: bool,
 ) -> None:
-    """Imprime un resumen del despliegue."""
-    # Contar páginas únicas por ruta de archivo
-    # slug_map tiene entradas duplicadas (bare name + full path apuntan al mismo archivo)
+    """Prints a deployment summary."""
+    # Count unique pages by file path
+    # slug_map has duplicate entries (bare name + full path point to the same file)
     unique_paths = set(slug_map.values())
     page_count = len(unique_paths)
 
-    # Categorizar por directorio
+    # Categorize by directory
     categories: dict[str, int] = {}
     for path in sorted(unique_paths):
         rel = Path(path).relative_to(WIKI_DIR.resolve())
@@ -834,53 +834,53 @@ def print_summary(
 
     print()
     print("=" * 60)
-    print("  RESUMEN DE DESPLIEGUE")
+    print("  DEPLOYMENT SUMMARY")
     print("=" * 60)
     print()
-    print(f"  Modo: {'dry-run' if dry_run else 'no-push' if no_push else 'completo'}")
-    print(f"  Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"  Mode: {'dry-run' if dry_run else 'no-push' if no_push else 'full'}")
+    print(f"  Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print()
-    print(f"  Páginas en el wiki: {page_count}")
+    print(f"  Wiki pages: {page_count}")
     for cat, count in sorted(categories.items()):
         print(f"    {cat}: {count}")
     print()
 
     if broken_links:
-        # Deduplicar
+        # Deduplicate
         unique_broken = sorted(set(broken_links))
-        print(f"  ⚠ Enlaces rotos: {len(unique_broken)}")
+        print(f"  ⚠ Broken links: {len(unique_broken)}")
         for link in unique_broken:
             print(f"    - [[{link}]]")
     else:
-        print(f"  ✓ Enlaces rotos: 0")
+        print(f"  ✓ Broken links: 0")
     print()
 
     if dry_run:
-        print(f"  Acciones que se realizarían en un despliegue real:")
-        print(f"    1. Clonar {WIKI_REPO}")
-        print(f"    2. Reemplazar contenido del wiki")
+        print(f"  Actions that would be performed in a real deployment:")
+        print(f"    1. Clone {WIKI_REPO}")
+        print(f"    2. Replace wiki content")
         print(f"    3. Commit: 'deploy: wiki update ...'")
-        print(f"    4. Push a branch '{WIKI_BRANCH}'")
+        print(f"    4. Push to branch '{WIKI_BRANCH}'")
     print()
     print("=" * 60)
 
 
-# ─── Main ───────────────────────────────────────────────────────────────────
+# ─── Main ────────────────────────────────────────────────────────────────────
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Despliega el wiki en el repositorio GitLab Wiki",
+        description="Deploys the wiki to the GitLab Wiki repository",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Prepara archivos pero no clona ni hace push. Imprime resumen.",
+        help="Prepares files but does not clone or push. Prints summary.",
     )
     parser.add_argument(
         "--no-push",
         action="store_true",
-        help="Clona y prepara pero no hace push. Deja directorio para inspección.",
+        help="Clones and prepares but does not push. Leaves directory for inspection.",
     )
     args = parser.parse_args()
 
@@ -888,22 +888,22 @@ def main() -> None:
     no_push = args.no_push
 
     print()
-    print("🚀 Despliegue de Wiki a GitLab")
+    print("🚀 Wiki Deployment")
     print("=" * 60)
     print()
 
-    # Validar que el directorio wiki existe
+    # Validate that the wiki directory exists
     if not WIKI_DIR.exists():
-        error(f"Directorio wiki no encontrado: {WIKI_DIR}")
+        error(f"Wiki directory not found: {WIKI_DIR}")
         sys.exit(1)
 
-    # 1. Construir mapa de slugs
-    info("Escaneando archivos del wiki...")
+    # 1. Build slug map
+    info("Scanning wiki files...")
     slug_map = build_slug_map(WIKI_DIR)
-    ok(f"Encontrados {len(slug_map)} archivos .md")
+    ok(f"Found {len(slug_map)} .md files")
 
-    # 2. Preparar archivos en directorio temporal
-    info("Preparando archivos...")
+    # 2. Prepare files in temporary directory
+    info("Preparing files...")
     tmp_dir, broken_links = prepare_files(WIKI_DIR, slug_map, dry_run)
 
     # 3. Desplegar a GitLab

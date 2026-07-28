@@ -5,8 +5,7 @@ description: >
   channels, attachments, SharePoint — via .agents/skills/kb-m365-fetch/scripts/graph-fetch.ps1 (deterministic,
   Graph API) with .agents/skills/kb-m365-fetch/scripts/m365-copilot.py as the fallback when a scope is blocked
   by tenant admin consent. Triggers on: "fetch emails", "pull teams chats",
-  "sync m365", "graph fetch", "baixa els correus", "trae los chats",
-  "actualiza m365", "/kb-m365-fetch".
+  "sync m365", "graph fetch", "/kb-m365-fetch".
 allowed-tools: Read Bash Grep Glob
 ---
 

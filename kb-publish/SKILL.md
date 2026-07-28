@@ -5,7 +5,7 @@ description: >
   .agents/skills/kb-publish/scripts/deploy-gitlab-wiki.py and .agents/skills/kb-publish/scripts/push.sh, which convert the vault's
   nested wiki structure into Gollum-compatible pages and push them.
   Triggers on: "publish the wiki", "deploy the wiki", "push to github wiki",
-  "push to gitlab", "publicar el wiki", "desplegar wiki", "sube el wiki", "/kb-publish".
+  "push to gitlab", "/kb-publish".
 allowed-tools: Read Bash Grep Glob
 ---
 
