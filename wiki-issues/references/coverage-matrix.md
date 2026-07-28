@@ -5,7 +5,7 @@ command files are deleted. This matrix maps each behavior of the two substantive
 (`commands/wiki/handoff.md`, `commands/wiki/fix-issues.md`) to the covering anchor in
 [SKILL.md](../SKILL.md). Gate is green iff there are **zero UNCOVERED rows**.
 
-The 5 thin wrappers (`autoresearch`, `canvas`, `save`, `doc-pipeline`, `wiki`) are covered trivially:
+The 4 thin wrappers (`autoresearch`, `save`, `doc-pipeline`, `wiki`) are covered trivially:
 each is a `/slash` router whose same-named skill already exists on disk (`skills/<name>/SKILL.md`,
 verified present). They carry no unique logic. → **covered by the pre-existing skills**.
 

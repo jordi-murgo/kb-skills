@@ -1,6 +1,6 @@
 ---
 name: wiki-ingest
-description: "Ingest sources into the Obsidian wiki vault. Reads a source, extracts entities and concepts, creates or updates wiki pages, cross-references, and logs the operation. Supports files, URLs, and batch mode. Optional `review` flag adds a pre-ingest human-in-the-loop gate that flags doubtful URL content (ads, nav, off-topic) with annotated recommendations before writing to .raw/. Triggers on: ingest, process this source, add this to the wiki, read and file this, batch ingest, ingest all of these, ingest this url."
+description: "Ingest sources into the wiki vault. Reads a source, extracts entities and concepts, creates or updates wiki pages, cross-references, and logs the operation. Supports files, URLs, and batch mode. Optional `review` flag adds a pre-ingest human-in-the-loop gate that flags doubtful URL content (ads, nav, off-topic) with annotated recommendations before writing to .raw/. Triggers on: ingest, process this source, add this to the wiki, read and file this, batch ingest, ingest all of these, ingest this url."
 argument-hint: "[file-or-url] [review] [force]"
 ---
 
@@ -8,7 +8,7 @@ argument-hint: "[file-or-url] [review] [force]"
 
 Read the source. Write the wiki. Cross-reference everything. A single source typically touches 8-15 wiki pages.
 
-**Syntax standard**: Write all Obsidian Markdown using proper Obsidian Flavored Markdown. Wikilinks as `[[Note Name]]`, callouts as `> [!type] Title`, embeds as `![[file]]`, properties as YAML frontmatter. If the kepano/obsidian-skills plugin is installed, prefer its canonical obsidian-markdown skill for Obsidian syntax reference. Otherwise, follow the guidance in this skill.
+**Syntax standard**: Write all wiki pages using the wiki markdown conventions. Wikilinks as `[[Note Name]]`, callouts as `> [!type] Title`, embeds as `![[file]]`, properties as YAML frontmatter. See the wiki-markdown skill for syntax reference.
 
 ---
 
@@ -63,7 +63,7 @@ Trigger: user passes a URL starting with `https://`.
 Steps:
 
 1. **Fetch** the page using WebFetch.
-2. **Clean** (optional): if `defuddle` is available (`which defuddle 2>/dev/null`), run `defuddle parse [url] --md` to strip ads, nav, and clutter. Typically saves 40-60% tokens. Fall back to raw WebFetch output if not installed.
+2. **Clean** (optional): strip ads, nav, and clutter from the fetched page. Typically saves 40-60% tokens. Fall back to raw WebFetch output if no cleaning tool is available.
 3. **Derive slug** from the URL path (last segment, lowercased, spaces→hyphens, strip query strings).
 4. **Branch on the `review` flag:**
    - **`review` NOT set (default)** — Save the cleaned markdown to `.raw/articles/[slug]-[YYYY-MM-DD].md` with the frontmatter header below, then continue to step 5.
@@ -83,7 +83,7 @@ Steps:
 
 ## Review Gate (opt-in via `review` flag)
 
-A pre-ingest, human-in-the-loop checkpoint for **URL ingests**. `defuddle` strips structural clutter deterministically, but vendor ads, calls-to-action, navigation remnants, and off-topic filler routinely survive and would otherwise be baked into the immutable `.raw/` source and propagate into wiki pages. The Review Gate makes Claude flag those passages with a recommendation and lets the user decide before anything is committed.
+A pre-ingest, human-in-the-loop checkpoint for **URL ingests**. Cleaning strips structural clutter deterministically, but vendor ads, calls-to-action, navigation remnants, and off-topic filler routinely survive and would otherwise be baked into the immutable `.raw/` source and propagate into wiki pages. The Review Gate makes Claude flag those passages with a recommendation and lets the user decide before anything is committed.
 
 Run this section **only** when the `review` flag is set. It sits between cleaning (step 2) and the `.raw/` write (step 4).
 
@@ -94,7 +94,7 @@ Run this section **only** when the `review` flag is set. It sits between cleanin
    ```markdown
    <!-- REVIEW[CODE » recommendation]: one-line reason (why it may not belong) -->
    ```
-   - HTML comments don't render in Obsidian and are trivially removable with `rg`/grep.
+   - HTML comments are invisible in rendered markdown and are trivially removable with `rg`/grep.
    - Annotate **only** doubtful content. Do not annotate clean, on-topic prose.
    - One annotation per contiguous block. Don't pepper every sentence.
 3. **Present a compact summary** to the user: a numbered list of every annotation with its `CODE`, recommendation, a short preview of the flagged block, and the reason. State the default action explicitly (all `remove`-recommended blocks will be deleted unless the user says otherwise).
@@ -276,7 +276,7 @@ Token budget matters. Follow these rules during ingest:
 ## Contradictions
 
 > [!note] Custom callout dependency
-> The `[!contradiction]` callout type used below is a **custom callout** defined in `.obsidian/snippets/vault-colors.css` (auto-installed by `/wiki` scaffold). It renders with reddish-brown styling and an alert-triangle icon when the snippet is enabled. If the snippet is missing, Obsidian falls back to default callout styling, so the page still works without the visual flourish. See [[skills/wiki/references/css-snippets.md]] for the four custom callouts (`contradiction`, `gap`, `key-insight`, `stale`).
+> The `[!contradiction]` callout type is a wiki convention. See the wiki-markdown skill for the custom callout types (contradiction, gap, key-insight, stale).
 
 When new info contradicts an existing wiki page:
 

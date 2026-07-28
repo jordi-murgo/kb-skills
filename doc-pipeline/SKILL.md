@@ -82,7 +82,7 @@ only insert HTML comments and the header block.
 
 ### 2a. Prepend the PIPELINE-REVIEW header
 
-Insert at the very top of the staging file (HTML comment → invisible in Obsidian):
+Insert at the very top of the staging file (HTML comment → invisible in rendered markdown):
 
 ```html
 <!-- PIPELINE-REVIEW

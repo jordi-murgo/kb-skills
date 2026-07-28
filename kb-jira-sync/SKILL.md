@@ -68,4 +68,4 @@ Exit `1` means a check failed. A batch of new issue pages most often trips
 noise. Link them from the relevant domain or index page.
 
 Watch for wikilink case: `[[proj-45]]` resolves, `[[PROJ-45]]` is reported
-dead even though Obsidian accepts both.
+dead even though the wiki accepts both.

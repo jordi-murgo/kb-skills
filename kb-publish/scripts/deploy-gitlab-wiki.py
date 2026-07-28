@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Despliega el wiki de Obsidian (wiki/) en el repositorio GitLab Wiki.
+Despliega el wiki (wiki/) en el repositorio GitLab Wiki.
 
 Uso:
     python3 scripts/deploy-gitlab-wiki.py [--dry-run] [--no-push]
@@ -103,8 +103,17 @@ if not _GL.get("repo"):
 WIKI_REPO = _GL["repo"]
 WIKI_BRANCH = _GL.get("branch", "main")
 
+# Target wiki platform: "github" (default) or "gitlab".
+# GitHub Wiki uses Home.md (capital H) as landing page; GitLab uses home.md.
+WIKI_TARGET = _GL.get("target", "github").lower()
+if WIKI_TARGET not in ("github", "gitlab"):
+    raise SystemExit(
+        f"gitlab_wiki.target must be 'github' or 'gitlab', got '{WIKI_TARGET}'"
+    )
+HOME_FILENAME = "Home.md" if WIKI_TARGET == "github" else "home.md"
+
 # Directorios a excluir del wiki
-EXCLUDE_DIRS = {".obsidian"}
+EXCLUDE_DIRS = set()
 
 # Patrón para wikilinks: [[target]] o [[target|display text]]
 WIKILINK_RE = re.compile(r"\[\[([^\[\]]+?)\]\]")
@@ -200,7 +209,7 @@ def build_slug_map(wiki_dir: Path) -> dict[str, str]:
 
 def convert_wikilinks(content: str, slug_map: dict[str, str]) -> tuple[str, list[str]]:
     """
-    Convierte wikilinks de Obsidian a formato GitLab wiki.
+    Convierte wikilinks a formato GitLab wiki.
 
     - [[target]] → [[ruta/completa]] si target resuelve en slug_map
     - [[target|display]] → [[display|ruta/completa]] si target resuelve
@@ -329,7 +338,8 @@ def list_wiki_sections() -> list[tuple[str, int]]:
 
 def generate_home(slug_map: dict[str, str]) -> str:
     """
-    Genera home.md — página de inicio con enlaces a las páginas principales.
+    Genera la página de inicio (Home.md para GitHub, home.md para GitLab)
+    con enlaces a las páginas principales.
     Usa el formato de wikilink convertido (ya con rutas completas).
     """
     # Resolver slugs para las páginas clave
@@ -429,7 +439,7 @@ def generate_home(slug_map: dict[str, str]) -> str:
         "",
         "---",
         "",
-        "> Este wiki se despliega automáticamente desde el repositorio Obsidian.",
+        "> Este wiki se despliega automáticamente desde el repositorio.",
         f"> Última actualización: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         "",
     ]
@@ -455,7 +465,7 @@ def generate_directory_indexes(slug_map: dict[str, str]) -> list[str]:
     wiki_dir_abs = WIKI_DIR.resolve()
     generated: list[str] = []
 
-    # Subdirectorios de primer nivel (excluyendo .obsidian y directorios vacíos)
+    # Subdirectorios de primer nivel (excluyendo directorios vacíos)
     subdirs = sorted(
         d for d in wiki_dir_abs.iterdir()
         if d.is_dir() and d.name not in EXCLUDE_DIRS and any(d.rglob("*.md"))
@@ -670,7 +680,7 @@ def prepare_files(
     Prepara todos los archivos del wiki en un directorio temporal:
     1. Copia archivos preservando subdirectorios
     2. Convierte frontmatter y wikilinks
-    3. Genera home.md y _sidebar.md
+    3. Genera página de inicio (Home.md/home.md) y _sidebar.md
 
     Devuelve: (ruta al directorio temporal, lista de broken links global)
     """
@@ -698,10 +708,10 @@ def prepare_files(
         dest_file.write_text(content, encoding="utf-8")
         processed_count += 1
 
-    # Generar home.md
+    # Generar página de inicio (Home.md para GitHub, home.md para GitLab)
     home_content = generate_home(slug_map)
-    (tmp_dir / "home.md").write_text(home_content, encoding="utf-8")
-    ok(f"Generado home.md")
+    (tmp_dir / HOME_FILENAME).write_text(home_content, encoding="utf-8")
+    ok(f"Generado {HOME_FILENAME}")
 
     # Generar _sidebar.md
     sidebar_content = generate_sidebar(slug_map)
@@ -860,7 +870,7 @@ def print_summary(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Despliega el wiki de Obsidian en el repositorio GitLab Wiki",
+        description="Despliega el wiki en el repositorio GitLab Wiki",
     )
     parser.add_argument(
         "--dry-run",

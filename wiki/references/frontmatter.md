@@ -1,6 +1,6 @@
 # Frontmatter Schema
 
-Every wiki page starts with flat YAML frontmatter. No nested objects. Obsidian's Properties UI requires flat structure.
+Every wiki page starts with flat YAML frontmatter. No nested objects. The wiki requires flat structure.
 
 ---
 

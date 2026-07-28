@@ -127,7 +127,7 @@ When `BOUNDARY_MODE=1` AND `QUEUE_MODE=0`:
 
 The boundary score is a heuristic, not an objective measure of what SHOULD be researched. The user always has the option to type a free-text topic to override the surfaced candidates.
 
-**Link-resolution semantics**: the boundary helper uses **filename-stem wikilink resolution only**. `[[Foo]]` is counted as an edge to `Foo.md` anywhere in the vault. Aliases declared via frontmatter `aliases:` are **not** parsed. Folder-qualified links (e.g. `[[notes/Foo]]`) are resolved by stem only. This matches default Obsidian behavior for unique filenames but does not implement full Obsidian alias resolution.
+**Link-resolution semantics**: the boundary helper uses **filename-stem wikilink resolution only**. `[[Foo]]` is counted as an edge to `Foo.md` anywhere in the vault. Aliases declared via frontmatter `aliases:` are **not** parsed. Folder-qualified links (e.g. `[[notes/Foo]]`) are resolved by stem only. This matches the wiki's link resolution behavior for unique filenames but does not implement full alias resolution.
 
 ### D. User-chosen (final fallback)
 When `QUEUE_MODE=0` AND `BOUNDARY_MODE=0`, or the user declined every queue/frontier pick, ask: "What topic should I research?"

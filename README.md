@@ -18,8 +18,8 @@ kb-skills/
 ├── wiki-lint/               ← health check + deterministic gates
 │   └── scripts/             ← run-lint.py + the four lint-*.py checks
 ├── wiki-query/  wiki-fold/  wiki-issues/
-├── save/  canvas/  defuddle/  doc-pipeline/  autoresearch/
-├── research-brief/  obsidian-bases/  obsidian-markdown/  visualize/
+├── save/  doc-pipeline/  autoresearch/
+├── research-brief/  wiki-markdown/
 ├── kb-setup/                ← wire a project's KB plumbing
 ├── kb-publish/              ← publish the vault to a GitLab Wiki
 │   └── scripts/
@@ -35,13 +35,12 @@ own into a project stays functional.
 ## Installing into a project
 
 ```bash
-cp -R /path/to/kb-skills/<skill> <project>/.agents/skills/<skill>
-ln -sfn "../../.agents/skills/<skill>" "<project>/.claude/skills/<skill>"
+npx skills add jordi-murgo/kb-skills
 ```
 
-The symlink is what makes the skill discoverable — `.claude/skills/` is the only
-path Claude Code scans. Verify it resolves; a symlink that exists is not a
-symlink that works:
+This copies the skills into your project's `.agents/skills/` and wires the
+symlinks that make them discoverable. Verify they resolved; a symlink that
+exists is not a symlink that works:
 
 ```bash
 for l in .claude/skills/*; do [ -f "$l/SKILL.md" ] || echo "BROKEN: $l"; done

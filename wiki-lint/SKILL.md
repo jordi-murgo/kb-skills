@@ -1,9 +1,9 @@
 ---
 name: wiki-lint
 description: >
-  Health check the Obsidian wiki vault. Finds orphan pages, dead wikilinks, stale claims,
+  Health check the wiki vault. Finds orphan pages, dead wikilinks, stale claims,
   missing cross-references, frontmatter gaps, and empty sections. Creates or updates
-  Dataview dashboards. Generates canvas maps. Triggers on: "lint", "health check",
+  Dataview dashboards. Triggers on: "lint", "health check",
   "clean up wiki", "check the wiki", "wiki maintenance", "find orphans", "wiki audit".
 ---
 
@@ -161,27 +161,17 @@ LIST FROM "wiki/questions" WHERE answer_quality = "draft" SORT created DESC
 
 ---
 
-## Canvas Map
+## Domain Map
 
-Create or update `wiki/meta/overview.canvas` for a visual domain map:
+Create or update `wiki/meta/overview.md` with a visual domain map using Mermaid:
 
-```json
-{
-  "nodes": [
-    {
-      "id": "1",
-      "type": "file",
-      "file": "wiki/overview.md",
-      "x": 0, "y": 0,
-      "width": 300, "height": 140,
-      "color": "1"
-    }
-  ],
-  "edges": []
-}
+```mermaid
+graph TD
+    A[Domain A] --> B[Domain B]
+    A --> C[Domain C]
 ```
 
-Add one node per domain page. Connect domains that have significant cross-references. Colors map to the CSS scheme: 1=blue, 2=purple, 3=yellow, 4=orange, 5=green, 6=red.
+Add one node per domain page. Connect domains that have significant cross-references.
 
 ---
 
@@ -313,7 +303,7 @@ esac
 ### Scope (what the helper scans)
 
 - Includes: every `.md` under `wiki/` **except** the exclusion set below. The scope is "candidate tileable pages," not just `type: concept`.
-- Excludes (path): anything under `wiki/folds/`, `wiki/meta/`, or `wiki/visualizations/` (generated visualize output — HTML + companion stubs, not authored concepts).
+- Excludes (path): anything under `wiki/folds/` or `wiki/meta/`.
 - Excludes (filename): `_index.md`, `index.md`, `log.md`, `hot.md`, `overview.md`, `dashboard.md`, `Wiki Map.md`, `getting-started.md`.
 - Excludes (frontmatter): `type: meta` or `type: fold`.
 - Excludes (security): symlinks. Any page file that is a symlink, or whose resolved path escapes the vault root, is skipped.

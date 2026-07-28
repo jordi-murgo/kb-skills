@@ -1,18 +1,24 @@
 ---
 name: kb-publish
 description: >
-  Publish the Obsidian wiki vault to a GitLab Wiki. Wraps
+  Publish the wiki vault to a GitHub or GitLab Wiki. Wraps
   .agents/skills/kb-publish/scripts/deploy-gitlab-wiki.py and .agents/skills/kb-publish/scripts/push.sh, which convert the vault's
-  nested Obsidian structure into Gollum-compatible pages and push them.
-  Triggers on: "publish the wiki", "deploy the wiki", "push to gitlab",
-  "publicar el wiki", "desplegar wiki", "sube el wiki", "/kb-publish".
+  nested wiki structure into Gollum-compatible pages and push them.
+  Triggers on: "publish the wiki", "deploy the wiki", "push to github wiki",
+  "push to gitlab", "publicar el wiki", "desplegar wiki", "sube el wiki", "/kb-publish".
 allowed-tools: Read Bash Grep Glob
 ---
 
-# kb-publish: Deploy the Vault to GitLab Wiki
+# kb-publish: Deploy the Vault to GitHub or GitLab Wiki
 
-The vault under `wiki/` is the source of truth. GitLab Wiki is a **generated
-target**: never edit pages there, they are overwritten on every deploy.
+The vault under `wiki/` is the source of truth. The wiki host (GitHub or
+GitLab) is a **generated target**: never edit pages there, they are overwritten
+on every deploy.
+
+Both platforms run Gollum under the hood, so wikilinks, `_sidebar.md`, and the
+git-based deploy mechanics are identical. The only difference is the landing
+page filename: GitHub uses `Home.md` (capital H), GitLab uses `home.md`. The
+script handles this based on the `target` field in `kb-config.yaml`.
 
 ---
 
@@ -80,7 +86,7 @@ Tell the user to connect the VPN and retry. Never suggest editing the check out.
 ## Known constraints
 
 - Wikilinks are **case-sensitive** to the lint checkers: `[[keycloak]]`
-  resolves, `[[Keycloak]]` is reported dead even though Obsidian accepts both.
+  resolves, `[[Keycloak]]` is reported dead even though the wiki accepts both.
   Fix the link, not the checker.
 - Gollum labels containing `[` or `]` (e.g. Jira titles like `[SEC] ...`) must
   be escaped by the deploy script; if links render as raw `[[...]]` text in

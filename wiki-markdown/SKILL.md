@@ -1,14 +1,12 @@
 ---
-name: obsidian-markdown
-description: "Write correct Obsidian Flavored Markdown: wikilinks, embeds, callouts, properties, tags, highlights, math, and canvas syntax. Reference this when creating or editing any wiki page. Triggers on: write obsidian note, obsidian syntax, wikilink, callout, embed, obsidian markdown, wikilink format, callout syntax, embed syntax, obsidian formatting, how to write obsidian markdown."
+name: wiki-markdown
+description: "Write correct wiki markdown: wikilinks, embeds, callouts, frontmatter, tags, highlights, and math. Reference this when creating or editing any wiki page. Triggers on: write wiki markdown, wikilink format, callout syntax, embed syntax, wiki formatting, how to write wiki markdown, frontmatter schema, wiki conventions."
 allowed-tools: Read Write Edit
 ---
 
-# obsidian-markdown: Obsidian Flavored Markdown
+# wiki-markdown: Wiki Markdown Conventions
 
-Reference this skill when writing any wiki page. Obsidian extends standard Markdown with wikilinks, embeds, callouts, and properties. Getting syntax wrong causes broken links, invisible callouts, or malformed frontmatter.
-
-**Cross-reference**: If the kepano/obsidian-skills plugin is installed, prefer its canonical obsidian-markdown skill for authoritative Obsidian syntax reference. Otherwise, use the reference below. See also [github.com/kepano/obsidian-skills](https://github.com/kepano/obsidian-skills).
+Reference this skill when writing any wiki page. The wiki extends standard Markdown with wikilinks, embeds, callouts, and YAML frontmatter. Getting syntax wrong causes broken links, invisible callouts, or malformed frontmatter.
 
 ---
 
@@ -25,7 +23,7 @@ Internal links use double brackets. The filename without extension.
 
 Rules:
 - Case-sensitive on some systems. Match the exact filename.
-- No path needed: Obsidian resolves by filename uniqueness.
+- No path needed: the wiki resolves by filename uniqueness.
 - If two files have the same name, use `[[Folder/Note Name]]` to disambiguate.
 
 ---
@@ -40,7 +38,7 @@ Embeds use `!` before the wikilink. They display the content inline.
 | `![[Note Name#Heading]]` | Embed a section |
 | `![[image.png]]` | Embed an image |
 | `![[image.png\|300]]` | Embed image with width 300px |
-| `![[document.pdf]]` | Embed a PDF (Obsidian renders natively) |
+| `![[document.pdf]]` | Embed a PDF |
 | `![[audio.mp3]]` | Embed audio |
 
 ---
@@ -81,12 +79,15 @@ Callouts are blockquotes with a type keyword. They render as styled alert boxes.
 | `example` |: | Examples |
 | `quote` | `cite` | Quotations |
 | `contradiction` |: | Conflicting information (wiki convention) |
+| `gap` |: | Missing information or open questions (wiki convention) |
+| `key-insight` |: | Important takeaway (wiki convention) |
+| `stale` |: | Outdated content needing review (wiki convention) |
 
 ---
 
 ## Properties (Frontmatter)
 
-Obsidian renders YAML frontmatter as a Properties panel. Rules:
+YAML frontmatter defines metadata for each page. The wiki reads these fields for display and search.
 
 ```yaml
 ---
@@ -110,7 +111,7 @@ Rules:
 - Dates as `YYYY-MM-DD`, not `2026-04-08T00:00:00`.
 - Lists as `- item`, not inline `[a, b, c]`.
 - Wikilinks in YAML must be quoted: `"[[Page]]"`.
-- `tags` field: Obsidian reads this as the tag list, searchable in vault.
+- `tags` field: the wiki reads this as the tag list, searchable across the knowledge base.
 
 ---
 
@@ -120,14 +121,14 @@ Two valid forms:
 
 ```markdown
 #tag-name             : inline tag anywhere in the body
-#parent/child-tag     : nested tag (shows hierarchy in tag pane)
+#parent/child-tag     : nested tag (shows hierarchy in tag browsing)
 ```
 
 In frontmatter:
 ```yaml
 tags:
   - research
-  - ai/obsidian
+  - ai/knowledge-base
 ```
 
 Do not use `#` inside frontmatter tag lists. Just the tag name.
@@ -136,21 +137,21 @@ Do not use `#` inside frontmatter tag lists. Just the tag name.
 
 ## Text Formatting
 
-Standard Markdown plus Obsidian extensions:
+Standard Markdown plus wiki markdown extensions:
 
 | Syntax | Result |
 |---|---|
 | `**bold**` | Bold |
 | `*italic*` | Italic |
 | `~~strikethrough~~` | Strikethrough |
-| `==highlight==` | Highlighted text (yellow in Obsidian) |
+| `==highlight==` | Highlighted text |
 | `` `inline code` `` | Inline code |
 
 ---
 
 ## Math
 
-Obsidian uses MathJax/KaTeX:
+The wiki uses MathJax/KaTeX for math rendering:
 
 Inline math:
 ```markdown
@@ -168,7 +169,7 @@ $$
 
 ## Code Blocks
 
-Standard fenced code blocks. Obsidian highlights all common languages:
+Standard fenced code blocks with language highlighting:
 
 ````markdown
 ```python
@@ -190,13 +191,11 @@ Standard Markdown tables:
 | Value    | Value    | Value    |
 ```
 
-Obsidian renders tables natively. No plugin needed.
-
 ---
 
 ## Mermaid Diagrams
 
-Obsidian renders Mermaid natively:
+Mermaid diagrams render natively:
 
 ````markdown
 ```mermaid
@@ -227,5 +226,5 @@ This sentence has a footnote.[^1]
 - Do not use `[link text](path/to/note.md)` for internal links: use `[[Note Name]]` instead.
 - Do not use HTML inside callouts: stick to Markdown.
 - Do not use `##` inside a callout body: headings don't render inside callouts.
-- Do not write `tags: [a, b, c]` inline in frontmatter: Obsidian prefers the list format.
+- Do not write `tags: [a, b, c]` inline in frontmatter: use the list format.
 - Do not write ISO datetimes in frontmatter (`2026-04-08T00:00:00Z`): use `2026-04-08`.

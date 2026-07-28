@@ -116,7 +116,7 @@ is `1`. Use a fresh copy per fault, or the tests contaminate each other.
 ### Known gate behaviour
 
 - **Wikilinks are case-sensitive**: `[[keycloak]]` resolves, `[[Keycloak]]` is
-  reported dead. Obsidian accepts both, so the vault can look fine and still
+  reported dead. the wiki accepts both, so the vault can look fine and still
   fail the gate. Fix links to match the filename exactly.
 - `wiki-lint/SKILL.md` documents Title Case filenames (`Machine Learning.md`)
   while this vault uses lowercase-hyphen (`keycloak.md`). The vault wins.
