@@ -112,3 +112,26 @@ exited 0 — green while testing nothing.
 
 Before trusting any gate, prove it fails: inject a fault and confirm a non-zero
 exit. A gate that has never failed has never been tested.
+
+## Acknowledgements
+
+The wiki core skills are derived from [AgriciDaniel/claude-obsidian](https://github.com/AgriciDaniel/claude-obsidian),
+an open-source Claude Code plugin that turns Obsidian into a self-organizing AI
+second brain, based on Karpathy's LLMWiki pattern.
+
+| Upstream skill | This repo | Notes |
+|---|---|---|
+| `wiki` | `wiki/` | Scaffold, architecture, routing — Obsidian references removed |
+| `wiki-ingest` | `wiki-ingest/` | Source ingestion — Obsidian references removed |
+| `wiki-lint` | `wiki-lint/` | Health checks, deterministic gates |
+| `wiki-query` | `wiki-query/` | Hot cache → index → pages query |
+| `wiki-fold` | `wiki-fold/` | Log entry rollups |
+| `wiki-issues` | `wiki-issues/` | Open-issues stack |
+| `save` | `save/` | Save conversation/insight to vault |
+| `autoresearch` | `autoresearch/` | Karpathy-style research loop |
+| `research-brief` | `research-brief/` | Brief construction/audit for autoresearch |
+| `doc-pipeline` | `doc-pipeline/` | Document → markdown conversion |
+| `obsidian-markdown` | `wiki-markdown/` | Renamed; documents wiki markdown conventions (wikilinks, callouts, frontmatter) |
+
+The `kb-*` skills (`kb-setup`, `kb-jira-sync`, `kb-m365-fetch`, `kb-publish`)
+are original to this repo.
