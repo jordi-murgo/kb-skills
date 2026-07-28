@@ -31,12 +31,15 @@ jira:
 
 gitlab_wiki:
   enabled: false
-  repo: git@git.example.com:user/project.wiki.git
+  # Target wiki platform: "github" (default) or "gitlab".
+  # GitHub Wiki uses Home.md (capital H) as landing page; GitLab uses home.md.
+  target: github
+  repo: git@github.com:user/project.wiki.git
   branch: main
   # push.sh resolves vpn_host and aborts unless it lands under
   # vpn_private_prefix. Set vpn_required to false outside a corporate network.
-  vpn_required: true
-  vpn_host: git.example.com
+  vpn_required: false
+  vpn_host: github.com
   vpn_private_prefix: "10."
 
 m365:
