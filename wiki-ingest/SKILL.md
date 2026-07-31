@@ -58,7 +58,7 @@ Trigger: user passes a URL starting with `https://`.
 - `review` — enable the **Review Gate** (see below). Off by default. Inserts a human-in-the-loop checkpoint between cleaning and `.raw/` so doubtful content (ads, nav, off-topic filler) can be flagged and pruned *before* it becomes an immutable source.
 - `force` — skip delta-tracking and re-ingest even if the source hash is unchanged (see *Delta Tracking*).
 
-> These are not formally parsed options — Claude Code does no flag validation. The skill recognizes them by scanning `$ARGUMENTS` for the exact words `review` / `force`. An unknown token is ignored, not an error. The `argument-hint` (`[file-or-url] [review] [force]`) only drives autocomplete display.
+> These are not formally parsed options — the AI agent does no flag validation. The skill recognizes them by scanning `$ARGUMENTS` for the exact words `review` / `force`. An unknown token is ignored, not an error. The `argument-hint` (`[file-or-url] [review] [force]`) only drives autocomplete display.
 
 Steps:
 
@@ -83,7 +83,7 @@ Steps:
 
 ## Review Gate (opt-in via `review` flag)
 
-A pre-ingest, human-in-the-loop checkpoint for **URL ingests**. Cleaning strips structural clutter deterministically, but vendor ads, calls-to-action, navigation remnants, and off-topic filler routinely survive and would otherwise be baked into the immutable `.raw/` source and propagate into wiki pages. The Review Gate makes Claude flag those passages with a recommendation and lets the user decide before anything is committed.
+A pre-ingest, human-in-the-loop checkpoint for **URL ingests**. Cleaning strips structural clutter deterministically, but vendor ads, calls-to-action, navigation remnants, and off-topic filler routinely survive and would otherwise be baked into the immutable `.raw/` source and propagate into wiki pages. The Review Gate makes the AI agent flag those passages with a recommendation and lets the user decide before anything is committed.
 
 Run this section **only** when the `review` flag is set. It sits between cleaning (step 2) and the `.raw/` write (step 4).
 
@@ -143,7 +143,7 @@ Trigger: user passes an image file path (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp
 
 Steps:
 
-1. **Read** the image file using the Read tool. Claude can process images natively.
+1. **Read** the image file using the Read tool. The AI agent can process images natively.
 2. **Describe** the image contents: extract all text (OCR), identify key concepts, entities, diagrams, and data visible in the image.
 3. **Save** the description to `.raw/images/[slug]-[YYYY-MM-DD].md`:
    ```markdown
@@ -389,7 +389,7 @@ On a page rename, the skill must update the `address_map` key (old path -> new p
 
 ### Concurrency policy
 
-- **Single-writer only** in Phase 2. Do not run parallel ingests from multiple Claude sessions or sub-agents that assign addresses. The `flock` in the helper prevents counter corruption but does not serialize page writes themselves.
+- **Single-writer only** in Phase 2. Do not run parallel ingests from multiple AI agent sessions or sub-agents that assign addresses. The `flock` in the helper prevents counter corruption but does not serialize page writes themselves.
 - Sub-agents (e.g. general-purpose) that are dispatched for research or review MUST NOT call the allocator. They are read-only in this respect.
 - Multi-writer support is a deferred feature.
 

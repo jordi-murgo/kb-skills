@@ -21,7 +21,7 @@ this skill covers the layout, discovery, gates, and pipelines around it.
 Skills live as **real content** in `.agents/skills/<name>/SKILL.md`, tracked in
 the repo so they travel with it.
 
-**Claude Code only discovers `.claude/skills/`.** `.agents/skills/` is never
+**The AI agent only discovers `.claude/skills/`.** `.agents/skills/` is never
 scanned. Bridge them with intra-repo relative symlinks:
 
 ```bash
@@ -68,6 +68,21 @@ Confirm local settings stay out of the repo:
 
 ```bash
 git check-ignore -v .claude/settings.local.json
+```
+
+### `.raw/` in, `.cache/` out
+
+`.raw/` is committed. It is generated, never hand-edited, but `lint-contradictions.py`
+globs `.raw/**/*` to decide whether an entity is sourced — ignore it and the gate
+still exits 0 while testing nothing, with every entity reading as unsourced.
+
+`.cache/` is the opposite: verbatim API payloads that the source pipelines keep
+so a renderer fix does not mean re-fetching everything. It is disposable, it is
+large, and it holds fields the renderers deliberately drop — `accountId`s, avatar
+URLs, every custom field. Keep it out of the repo:
+
+```gitignore
+.cache/
 ```
 
 ## 3. Naming
@@ -129,10 +144,86 @@ is `1`. Use a fresh copy per fault, or the tests contaminate each other.
 |---|---|---|
 | M365 mail / Teams / SharePoint | `kb-m365-fetch` | `m365` |
 | Jira | `kb-jira-sync` | `jira` + `ATLASIAN_*` env |
-| GitLab Wiki publish | `kb-publish` | `gitlab_wiki` |
+| Wiki publish | `kb-publish` | `wiki_publish` |
+| Atlassian discovery (optional) | `twg` CLI | — (reads own auth) |
 
 All of them write to `.raw/`, which is immutable. `wiki-ingest` turns `.raw/`
 into wiki pages. Nothing else writes to `wiki/` from a pipeline.
+
+### 5.1 `twg` CLI — Atlassian discovery (optional)
+
+The [`twg` CLI](https://developer.atlassian.com/cloud/twg-cli/) provides graph
+traversal, semantic search (Rovo), and context discovery across Atlassian
+Cloud (Jira, Confluence, Bitbucket, Goals, Assets). It is an optional
+accelerator for `kb-jira-sync`'s reconcile phase — not a dependency.
+
+**Installation:**
+
+```bash
+# Install twg (one-time, per machine)
+curl -fsSL https://teamwork-graph.atlassian.com/cli/install | bash
+
+# Verify
+twg doctor
+```
+
+**Project-local credentials with `TWG_CONFIG_DIR`:**
+
+TWG supports `TWG_CONFIG_DIR` to store credentials inside the project
+directory (gitignored) instead of the global `~/.config/twg/`. This isolates
+per-project Atlassian sessions and enables multi-site/multi-tenant workflows
+— each project can authenticate against a different Atlassian site without
+colliding with the global config.
+
+Setup (one-time, interactive — opens browser):
+
+```bash
+# 1. Create the project-local TWG config directory
+mkdir -p .twg
+
+# 2. Login against the project's Atlassian site
+TWG_CONFIG_DIR=.twg twg login --site <site-prefix>
+
+# 3. Verify
+TWG_CONFIG_DIR=.twg twg doctor
+```
+
+Then add to `.gitignore`:
+
+```gitignore
+# TWG CLI project-local credentials (OAuth tokens)
+.twg/
+```
+
+And add to `.env.local` (already gitignored):
+
+```bash
+# TWG CLI — project-local Atlassian credentials
+TWG_CONFIG_DIR=.twg
+```
+
+After that, all `twg` commands pick up `TWG_CONFIG_DIR` from the environment
+automatically. No `kb-config.yaml` section needed — TWG reads its own auth
+from the config dir and resolves the site from the stored credentials.
+
+**Verify it works:**
+
+```bash
+command -v twg >/dev/null 2>&1 && [ -f .twg/auth.conf ] && echo "twg ready" || echo "twg not found or not authenticated"
+twg jira workitem get <PROJECT-KEY>-1   # should return issue JSON
+twg rovo list-apps                      # should list connected apps
+```
+
+**Multi-site/multi-tenant:** each project gets its own `.twg/` with
+credentials for its Atlassian site. The global `~/.config/twg/` is never
+touched. To work against a different site, `cd` to that project and its
+`.twg/` credentials are used automatically.
+
+**What it adds:** see `kb-jira-sync` → Stage 0 — TWG Discovery.
+
+**When to skip it:** if the project has no Atlassian Cloud connection, or if
+the flat REST API import is sufficient. TWG is a discovery tool, not a
+pipeline — it does not write to `.raw/` or `wiki/`.
 
 ## 6. `kb-config.yaml` — creating and maintaining it
 

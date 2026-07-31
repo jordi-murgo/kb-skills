@@ -59,7 +59,7 @@ One row per log entry. Row count must equal `entry_count` in frontmatter and the
 | Date | Op | Title | Page | Summary (extractive) |
 |---|---|---|---|---|
 | 2026-04-23 | save | DragonScale Memory v0.2 — post-adversarial-review | [[DragonScale Memory]] | Adversarial-review rewrite; 7/7 critiques accepted after one surgical fix. |
-| 2026-04-15 | save | Claude SEO v1.9.0 Slides and GitHub Release | [[2026-04-15-slides-and-release-session]] | 15-slide HTML deck, v1.9.0 tagged, GitHub release with PDF asset. |
+| 2026-04-15 | save | SEO v1.9.0 Slides and GitHub Release | [[2026-04-15-slides-and-release-session]] | 15-slide HTML deck, v1.9.0 tagged, GitHub release with PDF asset. |
 <!-- one row per log entry; no dedupe by page -->
 ```
 

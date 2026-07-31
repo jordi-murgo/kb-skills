@@ -10,8 +10,9 @@
 # entirely while PowerShell's Join-Path does not, so the same file would mean two
 # different things depending on which pipeline read it.
 #
-# CREDENTIALS never live here. Jira reads ATLASIAN_EMAIL and ATLASIAN_API_KEY
-# from the environment or .env.local.
+# CREDENTIALS never live here. Jira reads ATLASSIAN_EMAIL and ATLASSIAN_API_KEY
+# from the environment or .env.local. The historical misspelling ATLASIAN_* (one
+# S) still works so existing vaults keep running, but it warns.
 #
 # JSON is still accepted (kb-config.json) so projects can migrate at their own
 # pace. YAML needs PyYAML in Python; graph-fetch.ps1 installs powershell-yaml on
@@ -27,9 +28,14 @@ jira:
   enabled: false
   base_url: https://yourorg.atlassian.net
   project_key: PROJ
+  # Rendered Markdown, one file per issue. Committed — this is the artefact.
   output_dir: .raw/jira
+  # Verbatim API payloads. Gitignored and disposable: they exist so the renderer
+  # can be fixed and re-run (--render-only) without re-fetching the project,
+  # which costs Atlassian API points. Delete freely; the next run refills it.
+  cache_dir: .cache/jira
 
-gitlab_wiki:
+wiki_publish:
   enabled: false
   # Target wiki platform: "github" (default) or "gitlab".
   # GitHub Wiki uses Home.md (capital H) as landing page; GitLab uses home.md.

@@ -57,7 +57,7 @@ Nothing project-specific belongs in skill code. Copy `kb-config.example.yaml` to
 |---|---|
 | `project` | name and keywords used to match project content |
 | `jira` | `kb-jira-sync` — base URL, project key, output dir |
-| `gitlab_wiki` | `kb-publish` — wiki repo, branch, VPN precondition |
+| `wiki_publish` | `kb-publish` — wiki repo, branch, VPN precondition |
 | `m365` | `kb-m365-fetch` — modules, output paths, time window |
 
 Credentials never live in this file. Jira reads `ATLASIAN_EMAIL` and
@@ -116,7 +116,7 @@ exit. A gate that has never failed has never been tested.
 ## Acknowledgements
 
 The wiki core skills are derived from [AgriciDaniel/claude-obsidian](https://github.com/AgriciDaniel/claude-obsidian),
-an open-source Claude Code plugin that turns Obsidian into a self-organizing AI
+an open-source AI agent plugin that turns Obsidian into a self-organizing AI
 second brain, based on Karpathy's LLMWiki pattern.
 
 | Upstream skill | This repo | Notes |

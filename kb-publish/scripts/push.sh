@@ -31,7 +31,7 @@ if [ ! -f "$CFG" ]; then
 fi
 read_cfg() { python3 -c "
 import json,sys
-cfg=json.load(open('$CFG')).get('gitlab_wiki',{})
+cfg=json.load(open('$CFG')).get('wiki_publish',{})
 v=cfg.get('$1', '$2')
 print('' if v is None else ('true' if v is True else ('false' if v is False else v)))"; }
 
@@ -42,7 +42,7 @@ VPN_PREFIX=$(read_cfg vpn_private_prefix "10.")
 # Verify VPN — the host must resolve to a private IP
 if [ "$VPN_REQUIRED" = "true" ]; then
     if [ -z "$VPN_HOST" ]; then
-        echo "❌ gitlab_wiki.vpn_required is true but vpn_host is missing in kb-config.json"
+        echo "❌ wiki_publish.vpn_required is true but vpn_host is missing in kb-config.json"
         exit 1
     fi
     GIT_IP=$(host "$VPN_HOST" 2>/dev/null | awk '/has address/ {print $NF}' | head -1)
@@ -68,7 +68,7 @@ git push "$@"
 CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep "^wiki/" | head -1)
 if [ -n "$CHANGED" ]; then
     echo "📋 Changes in wiki/ detected — deploying to GitLab Wiki..."
-    python3 "$SCRIPT_DIR/deploy-gitlab-wiki.py"
+    python3 "$SCRIPT_DIR/deploy-wiki.py"
 else
     echo "ℹ No changes in wiki/ — skip deploy"
 fi

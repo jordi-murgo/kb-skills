@@ -165,7 +165,7 @@ updated: YYYY-MM-DD
 ---
 ```
 
-Hot cache note: `_meta/hot-cache.md` is a ~500-word file Claude updates at the end of each session. It captures current focus areas, recent wins, and open threads. This prevents Claude from having to crawl the whole wiki to answer "where were we?".
+Hot cache note: `_meta/hot-cache.md` is a ~500-word file the AI agent updates at the end of each session. It captures current focus areas, recent wins, and open threads. This prevents the AI agent from having to crawl the whole wiki to answer "where were we?".
 
 Key wiki pages to create: `[[North Star]]`, `[[Weekly Review Template]]`, `[[Annual Goals]]`
 

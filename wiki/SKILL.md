@@ -154,7 +154,7 @@ Created: YYYY-MM-DD
 ## Operations
 
 - Ingest: drop source in .raw/, say "ingest [filename]"
-- Query: ask any question: Claude reads index first, then drills in
+- Query: ask any question: the AI agent reads index first, then drills in
 - Lint: say "lint the wiki" to run a health check
 - Archive: move cold sources to .archive/ to keep .raw/ clean
 ```
@@ -163,7 +163,7 @@ Created: YYYY-MM-DD
 
 ## Cross-Project Referencing
 
-This is the force multiplier. Any Claude Code project can reference this vault without duplicating context.
+This is the force multiplier. Any AI agent project can reference this vault without duplicating context.
 
 In another project's CLAUDE.md, add:
 

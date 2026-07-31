@@ -2,7 +2,7 @@
 name: kb-publish
 description: >
   Publish the wiki vault to a GitHub or GitLab Wiki. Wraps
-  .agents/skills/kb-publish/scripts/deploy-gitlab-wiki.py and .agents/skills/kb-publish/scripts/push.sh, which convert the vault's
+  .agents/skills/kb-publish/scripts/deploy-wiki.py and .agents/skills/kb-publish/scripts/push.sh, which convert the vault's
   nested wiki structure into Gollum-compatible pages and push them.
   Triggers on: "publish the wiki", "deploy the wiki", "push to github wiki",
   "push to gitlab", "/kb-publish".
@@ -25,7 +25,7 @@ script handles this based on the `target` field in `kb-config.yaml`.
 ## Always dry-run first
 
 ```bash
-python3 .agents/skills/kb-publish/scripts/deploy-gitlab-wiki.py --dry-run
+python3 .agents/skills/kb-publish/scripts/deploy-wiki.py --dry-run
 ```
 
 This prepares every page and prints a summary without cloning or pushing.
@@ -35,9 +35,9 @@ Read the summary before going further. There is no undo on a push.
 
 | Command | Clones | Pushes | Use when |
 |---|---|---|---|
-| `python3 .agents/skills/kb-publish/scripts/deploy-gitlab-wiki.py --dry-run` | no | no | always, first |
-| `python3 .agents/skills/kb-publish/scripts/deploy-gitlab-wiki.py --no-push` | yes | no | inspecting generated output on disk |
-| `python3 .agents/skills/kb-publish/scripts/deploy-gitlab-wiki.py` | yes | yes | the real deploy |
+| `python3 .agents/skills/kb-publish/scripts/deploy-wiki.py --dry-run` | no | no | always, first |
+| `python3 .agents/skills/kb-publish/scripts/deploy-wiki.py --no-push` | yes | no | inspecting generated output on disk |
+| `python3 .agents/skills/kb-publish/scripts/deploy-wiki.py` | yes | yes | the real deploy |
 
 `--no-push` leaves the clone directory in place so you can diff the generated
 Gollum pages against what you expected.
@@ -46,7 +46,7 @@ Gollum pages against what you expected.
 
 ## Configuration
 
-The wiki repo, branch and VPN precondition come from the `gitlab_wiki` section
+The wiki repo, branch and VPN precondition come from the `wiki_publish` section
 of `kb-config.yaml` at the vault root. The scripts refuse to run and name the
 problem when `enabled` is false or `repo` is missing.
 

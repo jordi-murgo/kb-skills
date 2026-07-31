@@ -3,7 +3,7 @@
 Deploys the wiki (wiki/) to the GitLab Wiki repository.
 
 Usage:
-    python3 scripts/deploy-gitlab-wiki.py [--dry-run] [--no-push]
+    python3 scripts/deploy-wiki.py [--dry-run] [--no-push]
 
     --dry-run: prepares files in a temporary directory but does not clone or push.
                Prints a summary of what would be done.
@@ -90,15 +90,15 @@ def load_config(root: Path, section: str) -> dict:
 REPO_ROOT = find_repo_root()
 WIKI_DIR = REPO_ROOT / "wiki"
 
-_GL = load_config(REPO_ROOT, "gitlab_wiki")
+_GL = load_config(REPO_ROOT, "wiki_publish")
 
 if not _GL.get("enabled", False):
     raise SystemExit(
-        "gitlab_wiki.enabled is false in kb-config.json — nothing to publish.\n"
+        "wiki_publish.enabled is false in kb-config.json — nothing to publish.\n"
         "Set it to true once repo is configured."
     )
 if not _GL.get("repo"):
-    raise SystemExit("kb-config.json gitlab_wiki section is missing: repo")
+    raise SystemExit("kb-config.json wiki_publish section is missing: repo")
 
 WIKI_REPO = _GL["repo"]
 WIKI_BRANCH = _GL.get("branch", "main")
@@ -108,7 +108,7 @@ WIKI_BRANCH = _GL.get("branch", "main")
 WIKI_TARGET = _GL.get("target", "github").lower()
 if WIKI_TARGET not in ("github", "gitlab"):
     raise SystemExit(
-        f"gitlab_wiki.target must be 'github' or 'gitlab', got '{WIKI_TARGET}'"
+        f"wiki_publish.target must be 'github' or 'gitlab', got '{WIKI_TARGET}'"
     )
 HOME_FILENAME = "Home.md" if WIKI_TARGET == "github" else "home.md"
 

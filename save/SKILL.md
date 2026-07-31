@@ -90,7 +90,7 @@ status: active
 ## Writing Style
 
 - Declarative, present tense. Write the knowledge, not the conversation.
-- Not: "The user asked about X and Claude explained..."
+- Not: "The user asked about X and the AI agent explained..."
 - Yes: "X works by doing Y. The key insight is Z."
 - Include all relevant context. Future sessions should be able to read this page cold.
 - Link every mentioned concept, entity, or wiki page with wikilinks.
