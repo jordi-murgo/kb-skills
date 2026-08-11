@@ -303,139 +303,40 @@ def process_file(
 # ─── Special page generation ────────────────────────────────────────────────
 
 
-def read_dashboard_body() -> str | None:
+def read_index_body() -> str | None:
     """
-    Reads wiki/dashboard.md and returns its body without frontmatter or the first H1.
+    Reads wiki/index.md and returns its body without frontmatter or the first H1.
     Returns None if the file does not exist.
     """
-    dashboard = WIKI_DIR / "dashboard.md"
-    if not dashboard.exists():
+    index = WIKI_DIR / "index.md"
+    if not index.exists():
         return None
-    raw = dashboard.read_text(encoding="utf-8")
+    raw = index.read_text(encoding="utf-8")
     body = FRONTMATTER_RE.sub("", raw, count=1)
     body = re.sub(r"^\s*#\s+.+?\n", "", body, count=1)
     return body.strip()
 
 
-def list_wiki_sections() -> list[tuple[str, int]]:
-    """
-    Returns (directory_name, number of .md pages) for each first-level
-    subdirectory of the wiki that contains pages, sorted alphabetically.
-    """
-    wiki_dir_abs = WIKI_DIR.resolve()
-    sections: list[tuple[str, int]] = []
-    for d in sorted(wiki_dir_abs.iterdir()):
-        if not d.is_dir() or d.name in EXCLUDE_DIRS:
-            continue
-        pages = [
-            f for f in d.rglob("*.md")
-            if not any(part in EXCLUDE_DIRS for part in f.relative_to(wiki_dir_abs).parts)
-        ]
-        if pages:
-            sections.append((d.name, len(pages)))
-    return sections
-
-
 def generate_home(slug_map: dict[str, str]) -> str:
     """
-    Generates the home page (Home.md for GitHub, home.md for GitLab)
-    with links to the main pages.
+    Generates the home page (Home.md for GitHub, home.md for GitLab) from
+    wiki/index.md as-is: index.md is the maintained master catalog, so the
+    landing page mirrors it instead of a separately-generated summary.
     Uses the converted wikilink format (already with full paths).
     """
-    # Resolve slugs for key pages
-    def link(name: str, display: str | None = None) -> str:
-        if name in slug_map:
-            rel = Path(slug_map[name]).relative_to(WIKI_DIR.resolve())
-            slug = str(rel.with_suffix(""))
-            if display:
-                return f"[[{display}|{slug}]]"
-            return f"[[{slug}]]"
-        return f"[[{name}]]"
+    index_body = read_index_body()
+    if index_body is None:
+        error("wiki/index.md not found — cannot generate home page")
+        sys.exit(1)
+
+    resolved_body, broken = convert_wikilinks(index_body, slug_map)
+    if broken:
+        warn(f"index.md: unresolved wikilinks: {', '.join(broken)}")
 
     lines = [
         "# Project Wiki",
         "",
-        "Project Wiki.",
-        "",
-        "---",
-        "",
-    ]
-
-    dashboard_body = read_dashboard_body()
-    if dashboard_body:
-        resolved_body, broken = convert_wikilinks(dashboard_body, slug_map)
-        if broken:
-            warn(f"dashboard.md: unresolved wikilinks: {', '.join(broken)}")
-        lines += [
-            "## Dashboard",
-            "",
-            resolved_body,
-            "",
-            f"> Source: {link('dashboard')}",
-            "",
-            "---",
-            "",
-        ]
-
-    lines += [
-        "## Quick Navigation",
-        "",
-        f"- {link('index', 'Full Index')} — all wiki pages",
-        f"- {link('overview', 'Executive Summary')} — project overview",
-        f"- {link('hot', 'Recent Context')} — latest updates and decisions",
-        f"- {link('log', 'Operation Log')} — chronological change log",
-        "",
-    ]
-
-    sections = list_wiki_sections()
-    if sections:
-        lines += [
-            "## Sections",
-            "",
-        ]
-        for name, count in sections:
-            title = name.replace("-", " ").replace("_", " ").title()
-            noun = "page" if count == 1 else "pages"
-            lines.append(f"- [[{title}|{name}]] — {count} {noun}")
-        lines.append("")
-
-    lines += [
-        "## Sources",
-        "",
-    ]
-
-    # Links to sources
-    sources = [k for k in slug_map if k.startswith("sources/")]
-    for s in sources:
-        rel = Path(slug_map[s]).relative_to(WIKI_DIR.resolve())
-        slug = str(rel.with_suffix(""))
-        lines.append(f"- [[{slug}]]")
-
-    lines += [
-        "",
-        "## Entities",
-        "",
-    ]
-
-    entities = [k for k in slug_map if k.startswith("entities/")]
-    for e in entities:
-        rel = Path(slug_map[e]).relative_to(WIKI_DIR.resolve())
-        slug = str(rel.with_suffix(""))
-        lines.append(f"- [[{slug}]]")
-
-    lines += [
-        "",
-        "## Concepts",
-        "",
-    ]
-
-    concepts = [k for k in slug_map if k.startswith("concepts/")]
-    for c in concepts:
-        rel = Path(slug_map[c]).relative_to(WIKI_DIR.resolve())
-        slug = str(rel.with_suffix(""))
-        lines.append(f"- [[{slug}]]")
-
-    lines += [
+        resolved_body,
         "",
         "---",
         "",

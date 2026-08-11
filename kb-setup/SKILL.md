@@ -21,7 +21,7 @@ this skill covers the layout, discovery, gates, and pipelines around it.
 Skills live as **real content** in `.agents/skills/<name>/SKILL.md`, tracked in
 the repo so they travel with it.
 
-**The AI agent only discovers `.claude/skills/`.** `.agents/skills/` is never
+**Claude Code only discovers `.claude/skills/`.** `.agents/skills/` is never
 scanned. Bridge them with intra-repo relative symlinks:
 
 ```bash
