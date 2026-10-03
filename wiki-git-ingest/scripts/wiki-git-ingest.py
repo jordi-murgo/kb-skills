@@ -3,13 +3,15 @@
 
 The watch list lives in the `repos` section of kb-config.yaml at the vault
 root (map keyed by name; values support ${VAR} macros like the rest of the
-config). Each entry takes exactly one forge key:
+config). Values may be plain forms or pasted git URLs (ssh 'git@host:path.git'
+or https; the host is taken from the URL). Each entry takes exactly one forge key:
   - {path: <local clone>}                     -> git log + CHANGELOG.md diff (any forge)
   - {github: "<owner>/<repo>"}                -> github.com releases.atom (no key)
   - {atom: <full releases-Atom URL>}          -> GitHub Enterprise or anything Atom
   - {gitlab: "[host/]<group/project>"}        -> GitLab REST v4 releases (gitlab.com
                                                  when no host); token_env for private
   - {bitbucket: "<workspace>/<repo>"}         -> bitbucket.org tags
+  - {azure: "<org>/<project>/<repo>"}         -> Azure DevOps tags refs (token_env PAT)
 Scan state (last seen sha/release/tag) is derived state in .vault-meta/repos.json —
 deleting it only forces a full rescan.
 
@@ -20,7 +22,10 @@ scripts/wiki_vet.py: {"claim", "quote", "target_page"}. State advances with
 Exit codes: 0 ok, 1 repo/git error, 2 usage error.
 """
 
+
 from __future__ import annotations
+
+import base64
 
 import os
 import argparse
@@ -137,17 +142,40 @@ def load_config_section(root: Path, section: str) -> dict:
     return {k: expand_macros(v) for k, v in sec.items()}
 
 
-FORGE_KEYS = ("github", "atom", "gitlab", "bitbucket", "path")
+FORGE_KEYS = ("github", "atom", "gitlab", "bitbucket", "azure", "path")
+
+
+def parse_git_ref(value: str) -> tuple[str | None, str]:
+    """Accept a pasted git URL or a plain path. Returns (host|None, path)
+    with any .git suffix and user@ stripped:
+      git@git.gft.com:group/sub/proj.git        -> ('git.gft.com', 'group/sub/proj')
+      https://git.gft.com/group/sub/proj.git    -> ('git.gft.com', 'group/sub/proj')
+      ssh://git@host/group/proj                 -> ('host', 'group/proj')
+      group/sub/proj                            -> (None, 'group/sub/proj')"""
+    value = value.strip()
+    if value.startswith("git@") and ":" in value:
+        host, _, path = value[4:].partition(":")
+        return host, path[:-4] if path.endswith(".git") else path
+    if value.startswith(("ssh://", "http://", "https://")):
+        parts = urllib.parse.urlsplit(value)
+        path = parts.path.strip("/")
+        if path.endswith(".git"):
+            path = path[:-4]
+        return parts.hostname or "", path
+    return None, value[:-4] if value.endswith(".git") else value
 
 
 def watch_list(cfg: dict) -> list[dict]:
     """Validate the `repos` config into the ordered list the scanners expect.
-    Each entry needs exactly one forge key:
+    Each entry needs exactly one forge key (plain form or a pasted git URL —
+    ssh 'git@host:path.git' or https, host inferred from it):
       github:    '<owner>/<repo>' on github.com (releases.atom, no key)
       atom:      full releases-Atom URL — GitHub Enterprise or anything Atom
       gitlab:    '[host/]<group/project>' via REST v4 releases (gitlab.com when
                  no host); optional token_env names an env var for private repos
       bitbucket: '<workspace>/<repo>' on bitbucket.org (tags feed)
+      azure:     '<org>/<project>/<repo>' (or its ssh/https git URL) via the
+                 DevOps tags refs API; token_env holds a PAT (Basic auth)
       path:      local clone of any forge (git log; read-only; vault-relative
                  allowed, may point outside the vault)
     ${VAR} macros already expanded by the config loader."""
@@ -163,21 +191,44 @@ def watch_list(cfg: dict) -> list[dict]:
             )
         kind = present[0]
         value = str(entry[kind])
-        if kind == "github" and value.count("/") != 1:
-            raise SystemExit(f"kb-config repos.{name}.github must be '<owner>/<repo>': {value!r}")
-        if kind == "bitbucket" and value.count("/") != 1:
-            raise SystemExit(f"kb-config repos.{name}.bitbucket must be '<workspace>/<repo>': {value!r}")
-        if kind == "atom" and not value.startswith(("http://", "https://")):
-            raise SystemExit(f"kb-config repos.{name}.atom must be a full http(s) URL: {value!r}")
-        if kind == "gitlab":
-            first, sep, rest = value.partition("/")
-            if not sep or not rest:
-                raise SystemExit(f"kb-config repos.{name}.gitlab must be '[host/]<group/project>': {value!r}")
-            if "." in first:
-                entry["host"], entry["project"] = first, rest
+        host, path = parse_git_ref(value)
+        if kind == "github":
+            if host not in (None, "github.com"):
+                raise SystemExit(f"kb-config repos.{name}.github: host {host!r} is not github.com — use 'atom:' for its releases feed or 'path:' for a clone")
+            if path.count("/") != 1:
+                raise SystemExit(f"kb-config repos.{name}.github must be '<owner>/<repo>': {value!r}")
+            entry["github"] = path
+        elif kind == "bitbucket":
+            if host not in (None, "bitbucket.org"):
+                raise SystemExit(f"kb-config repos.{name}.bitbucket: host {host!r} is not bitbucket.org — use 'path:' for a clone")
+            if path.count("/") != 1:
+                raise SystemExit(f"kb-config repos.{name}.bitbucket must be '<workspace>/<repo>': {value!r}")
+            entry["bitbucket"] = path
+        elif kind == "gitlab":
+            if host:
+                entry["host"], entry["project"] = host, path
             else:
-                entry["host"], entry["project"] = "gitlab.com", value
-        if kind == "path" and not os.path.isabs(value):
+                first, sep, rest = path.partition("/")
+                if sep and "." in first:
+                    entry["host"], entry["project"] = first, rest
+                else:
+                    entry["host"], entry["project"] = "gitlab.com", path
+            if "/" not in entry["project"] or not entry["project"].split("/")[-1]:
+                raise SystemExit(f"kb-config repos.{name}.gitlab must be '[host/]<group/project>': {value!r}")
+        elif kind == "azure":
+            if host not in (None, "ssh.dev.azure.com", "dev.azure.com"):
+                raise SystemExit(f"kb-config repos.{name}.azure: host {host!r} is not dev.azure.com — use 'path:' for a clone")
+            if path.startswith("v3/"):
+                path = path[3:]
+            if "/_git/" in path:
+                project, _, repo = path.partition("/_git/")
+                path = f"{project}/{repo}" if project and repo else path
+            if path.count("/") != 2:
+                raise SystemExit(f"kb-config repos.{name}.azure must be '<org>/<project>/<repo>': {value!r}")
+            entry["azure"] = path
+        elif kind == "atom" and not value.startswith(("http://", "https://")):
+            raise SystemExit(f"kb-config repos.{name}.atom must be a full http(s) URL: {value!r}")
+        elif kind == "path" and not os.path.isabs(value):
             entry["path"] = str((VAULT / value).resolve())
         entry.setdefault("name", name)
         repos.append(entry)
@@ -436,6 +487,46 @@ def scan_bitbucket(repo: dict, state: dict) -> tuple[list[dict], dict]:
         state["last_seen"] = newest.isoformat()
     return claims, state
 
+def scan_azure(repo: dict, state: dict) -> tuple[list[dict], dict]:
+    org, project, repo_name = repo["azure"].split("/")
+    url = (
+        f"https://dev.azure.com/{org}/{project}/_apis/git/repositories/{repo_name}"
+        "/refs?filter=tags/&api-version=7.0"
+    )
+    headers = {}
+    token_env = repo.get("token_env")
+    if token_env and os.environ.get(token_env):
+        pat = os.environ[token_env]
+        headers["Authorization"] = "Basic " + base64.b64encode(f":{pat}".encode()).decode()
+    raw = http_get(url, headers)
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        raise RuntimeError(
+            f"{url} returned non-JSON (auth page? private project?)"
+            + (f" — set {token_env} to a DevOps PAT" if token_env else " — add token_env to the repo entry")
+        )
+    seen = set(state.get("seen") or [])
+    claims: list[dict] = []
+    display = f"{org}/{project}/{repo_name}"
+    for ref in data.get("value", []):
+        ref_name = str(ref.get("name") or "").strip()
+        if not ref_name.startswith("refs/tags/") or ref_name in seen:
+            continue
+        tag = ref_name[len("refs/tags/"):]
+        seen.add(ref_name)
+        claims.append(
+            {
+                "claim": f"{display} tagged {tag}",
+                "quote": tag,
+                "target_page": repo.get("target_page", f"wiki/x-radar/{display.replace('/', '-')}.md"),
+                "source": f"https://dev.azure.com/{org}/{project}/_git/{repo_name}",
+                "skip_grounded": True,
+            }
+        )
+    state["seen"] = sorted(seen)
+    return claims, state
+
 
 def scan(repos: list[dict], states: dict, selected: list[str] | None) -> tuple[dict, dict]:
     new_states: dict = dict(states)
@@ -456,6 +547,8 @@ def scan(repos: list[dict], states: dict, selected: list[str] | None) -> tuple[d
                 claims, state = scan_gitlab(repo, state)
             elif "bitbucket" in repo:
                 claims, state = scan_bitbucket(repo, state)
+            elif "azure" in repo:
+                claims, state = scan_azure(repo, state)
             else:
                 print(f"skip {name}: needs one of {', '.join(FORGE_KEYS)}", file=sys.stderr)
                 continue

@@ -120,6 +120,14 @@ repos:
   # Bitbucket Cloud — tags:
   #bb-repo:
   #  bitbucket: workspace/repo
+  # Azure DevOps — tags refs; token_env holds a PAT (Basic auth):
+  #azdo-repo:
+  #  azure: gft-assets/gft-ai-platform/agentic-ai-call
+  #  token_env: AZDO_PAT
+  # Git URLs paste as-is (ssh or https, nested groups, .git suffix):
+  #gft-nested:
+  #  gitlab: git@git.gft.com:group/subgroup/project.git
+  #  token_env: GFT_GITLAB_TOKEN
   # Any local clone (any forge) — git log + CHANGELOG.md, read-only:
   #my-spike:
   #  path: ../my-project-spike
