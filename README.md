@@ -18,8 +18,17 @@ kb-skills/
 ├── wiki-lint/               ← health check + deterministic gates
 │   └── scripts/             ← run-lint.py + the four lint-*.py checks
 ├── wiki-query/  wiki-fold/  wiki-issues/
+├── wiki-semsearch/          ← hybrid BM25+vector vault search
+│   └── scripts/
+├── wiki-vetting/            ← claim vetting (System One) + lifecycle audit
+│   └── scripts/
+├── wiki-sync/               ← stale file-linked claims vs git history
+│   └── scripts/
+├── wiki-git-ingest/         ← upstream changelogs/releases → claims
+│   └── scripts/
+├── wiki-relations/          ← typed page graph + relation lint
+│   └── scripts/
 ├── save/  doc-pipeline/  autoresearch/
-├── research-brief/  wiki-markdown/
 ├── kb-setup/                ← wire a project's KB plumbing
 ├── kb-publish/              ← publish the vault to a GitLab Wiki
 │   └── scripts/

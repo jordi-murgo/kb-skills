@@ -81,3 +81,19 @@ m365:
     hours: 24
     top: 100
     chat_limit: 50
+
+# --- vault tooling (wiki-semsearch / wiki-vetting / wiki-git-ingest) ---
+# Optional: everything defaults to a local Ollama on 127.0.0.1:11434.
+# Env overrides win: WIKISEM_MODEL, WIKISEM_ENDPOINT, WIKI_VET_MODEL, WIKI_VET_ENDPOINT.
+
+embeddings:
+  # wiki-semsearch index model (multilingual recommended: bge-m3, qwen3-embedding)
+  model: bge-m3
+  endpoint: http://127.0.0.1:11434
+  # Index location (relative to vault root). Derived cache: deletable anytime.
+  db: .vault-meta/sem/index.db
+
+decisions:
+  # wiki-vetting System One endpoint. questions are a RECORD keyed by id.
+  model: clef-flash:9b
+  endpoint: http://127.0.0.1:11434/v1/systemone
