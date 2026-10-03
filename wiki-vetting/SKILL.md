@@ -15,7 +15,7 @@ python3 scripts/wiki-vet.py --claims claims.json [--json] [--model M] [--endpoin
 python3 scripts/wiki-lifecycle.py [--json]
 ```
 
-Input: JSON array of `{"claim", "quote", "target_page", "source", "skip_grounded"}`. Verdicts: `accept` (write it), `reject` (ungrounded or sensitive — drop or sanitize and re-vet), `review` (human decides). Defaults: model `clef-flash:9b`, endpoint `http://127.0.0.1:11434/v1/systemone` (env `WIKI_VET_MODEL`/`WIKI_VET_ENDPOINT`).
+Input: JSON array of `{"claim", "quote", "target_page", "source", "skip_grounded"}`. Verdicts: `accept` (write it), `reject` (ungrounded or sensitive — drop or sanitize and re-vet), `review` (human decides). Defaults: model `clef-flash:9b` (env `WIKI_VET_MODEL`), server `http://127.0.0.1:11434` with `/v1/systemone` appended (env `WIKI_VET_ENDPOINT`, else shared `WIKI_OLLAMA_URL`).
 
 ## Workflow
 

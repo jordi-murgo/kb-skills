@@ -84,7 +84,8 @@ m365:
 
 # --- vault tooling (wiki-semsearch / wiki-vetting / wiki-git-ingest) ---
 # Optional: everything defaults to a local Ollama on 127.0.0.1:11434.
-# Env overrides win: WIKISEM_MODEL, WIKISEM_ENDPOINT, WIKI_VET_MODEL, WIKI_VET_ENDPOINT.
+# Env overrides (specific beats shared): WIKI_OLLAMA_URL (any Ollama server),
+# WIKI_SEM_ENDPOINT / WIKI_SEM_MODEL / WIKI_SEM_DB, WIKI_VET_ENDPOINT / WIKI_VET_MODEL.
 
 embeddings:
   # wiki-semsearch index model (multilingual recommended: bge-m3, qwen3-embedding)
@@ -94,6 +95,7 @@ embeddings:
   db: .vault-meta/sem/index.db
 
 decisions:
-  # wiki-vetting System One endpoint. questions are a RECORD keyed by id.
+  # wiki-vetting System One server (base URL; /v1/systemone is appended).
+  # questions are a RECORD keyed by id.
   model: clef-flash:9b
-  endpoint: http://127.0.0.1:11434/v1/systemone
+  endpoint: http://127.0.0.1:11434

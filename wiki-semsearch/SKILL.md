@@ -16,7 +16,7 @@ python3 scripts/wiki-semsearch.py status                 # counts, staleness, ba
 python3 scripts/wiki-semsearch.py query "TEXT" [--top 8] [--mode hybrid|bm25|vector] [--json]
 ```
 
-Model via `--model` or `WIKISEM_MODEL` (default `bge-m3`); endpoint via `WIKISEM_ENDPOINT` (default `http://127.0.0.1:11434`). Index at `.vault-meta/sem/index.db` (`WIKISEM_DB` override) — a derived cache: delete and rebuild anytime (~6 s for a 35-page vault; a full rebuild also happens automatically when the model changes). `vector` mode needs the embedding endpoint up; `bm25` works offline.
+Model via `--model` or `WIKI_SEM_MODEL` (default `bge-m3`); server via `WIKI_SEM_ENDPOINT` or the shared `WIKI_OLLAMA_URL` (default `http://127.0.0.1:11434`; `/api/embed` is appended). Index at `.vault-meta/sem/index.db` (`WIKI_SEM_DB` override) — a derived cache: delete and rebuild anytime (~6 s for a 35-page vault; a full rebuild also happens automatically when the model changes). `vector` mode needs the embedding endpoint up; `bm25` works offline.
 
 ## Workflow
 

@@ -97,10 +97,13 @@ def parse_args(argv):
     )
     parser.add_argument(
         "--endpoint",
-        default=os.environ.get(
-            "WIKI_VET_ENDPOINT", "http://127.0.0.1:11434/v1/systemone"
+        default=(
+            os.environ.get("WIKI_VET_ENDPOINT")
+            or os.environ.get("WIKI_OLLAMA_URL")
+            or "http://127.0.0.1:11434"
         ),
-        help="systemone endpoint URL (env WIKI_VET_ENDPOINT).",
+        help="inference server base URL (env WIKI_VET_ENDPOINT, else WIKI_OLLAMA_URL);"
+        " /v1/systemone is appended.",
     )
     return parser.parse_args(argv)
 
@@ -203,6 +206,8 @@ def is_transient_error(exc):
 
 
 def call_systemone(endpoint, payload, question_ids):
+    if not endpoint.endswith("/v1/systemone"):
+        endpoint = endpoint.rstrip("/") + "/v1/systemone"
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     last_error = None
     for attempt in (1, 2):

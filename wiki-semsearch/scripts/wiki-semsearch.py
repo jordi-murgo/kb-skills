@@ -9,9 +9,10 @@ Subcommands:
 Fully local: BM25 via sqlite FTS5 (own inverted-index fallback when FTS5 is
 unavailable), embeddings via the local Ollama /api/embed endpoint.
 
-Environment overrides: WIKISEM_ENDPOINT (base URL, default
-http://127.0.0.1:11434), WIKISEM_MODEL (embedding model, default bge-m3),
-WIKISEM_DB (index path), WIKISEM_NO_FTS5=1 (force the fallback inverted index).
+Environment overrides (specific wins over the shared WIKI_OLLAMA_URL):
+WIKI_SEM_ENDPOINT (base URL of the embeddings server; /api/embed is appended),
+WIKI_SEM_MODEL (embedding model, default bge-m3), WIKI_SEM_DB (index path),
+WIKI_SEM_NO_FTS5=1 (force the fallback inverted index).
 """
 
 import argparse
@@ -51,9 +52,13 @@ def find_vault_root() -> Path:
 VAULT_ROOT = find_vault_root()
 WIKI_DIR = VAULT_ROOT / "wiki"
 DEFAULT_DB = VAULT_ROOT / ".vault-meta" / "sem" / "index.db"
-DEFAULT_MODEL = os.environ.get("WIKISEM_MODEL", "bge-m3")
-OLLAMA_URL = os.environ.get("WIKISEM_ENDPOINT", "http://127.0.0.1:11434")
-DB_PATH = Path(os.environ.get("WIKISEM_DB", str(DEFAULT_DB)))
+DEFAULT_MODEL = os.environ.get("WIKI_SEM_MODEL", "bge-m3")
+OLLAMA_URL = (
+    os.environ.get("WIKI_SEM_ENDPOINT")
+    or os.environ.get("WIKI_OLLAMA_URL")
+    or "http://127.0.0.1:11434"
+)
+DB_PATH = Path(os.environ.get("WIKI_SEM_DB", str(DEFAULT_DB)))
 
 EMBED_BATCH = 32
 EMBED_TIMEOUT = 180
@@ -199,7 +204,7 @@ def ensure_own_tables(conn):
 
 
 def decide_backend(conn):
-    if os.environ.get("WIKISEM_NO_FTS5") == "1":
+    if os.environ.get("WIKI_SEM_NO_FTS5") == "1":
         return "own"
     try:
         conn.execute(
@@ -693,9 +698,9 @@ def parse_args(argv):
         prog="wiki_semsearch.py",
         description="Local hybrid (BM25 + vector + RRF) search over the wiki vault.",
         epilog=(
-            "environment: WIKISEM_ENDPOINT (default http://127.0.0.1:11434),"
-            " WIKISEM_MODEL (default bge-m3), WIKISEM_DB (index path),"
-            " WIKISEM_NO_FTS5=1 (force fallback inverted index)"
+            "environment: WIKI_SEM_ENDPOINT or WIKI_OLLAMA_URL (base URL,"
+            " default http://127.0.0.1:11434), WIKI_SEM_MODEL (default bge-m3),"
+            " WIKI_SEM_DB (index path), WIKI_SEM_NO_FTS5=1 (force fallback inverted index)"
         ),
     )
     sub = p.add_subparsers(dest="cmd", required=True)
