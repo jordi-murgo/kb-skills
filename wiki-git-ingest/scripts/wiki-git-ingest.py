@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Watch associated project repos and draft wiki claims from their changelogs.
 
-Repos live in .vault-meta/repos.json. Two kinds are supported:
-  - {"name": ..., "path": <local clone>}   -> git log + CHANGELOG.md diff since the last seen commit
-  - {"name": ..., "github": "<owner>/<repo>"} -> GitHub releases.atom (no API key, no clone)
+The watch list lives in the `repos` section of kb-config.yaml at the vault
+root (map keyed by name; values support ${VAR} macros like the rest of the
+config). Two kinds are supported:
+  - {path: <local clone>}        -> git log + CHANGELOG.md diff since the last seen commit
+  - {github: "<owner>/<repo>"}   -> GitHub releases.atom (no API key, no clone)
+Scan state (last seen sha/release) is derived state in .vault-meta/repos.json —
+deleting it only forces a full rescan.
 
 `scan` prints what is new since the last run and emits claims shaped for
 scripts/wiki_vet.py: {"claim", "quote", "target_page"}. State advances with
@@ -14,6 +18,7 @@ Exit codes: 0 ok, 1 repo/git error, 2 usage error.
 
 from __future__ import annotations
 
+import os
 import argparse
 import datetime as dt
 import json
@@ -44,7 +49,7 @@ def find_vault_root() -> Path:
 
 
 VAULT = find_vault_root()
-CONFIG = VAULT / ".vault-meta" / "repos.json"
+STATE_FILE = VAULT / ".vault-meta" / "repos.json"
 ATOM_NS = {"a": "http://www.w3.org/2005/Atom"}
 CONVENTIONAL = re.compile(r"^(\w+)(?:\([^)]*\))?(!)?:\s+(.+)$")
 VERSION_HEADER = re.compile(r"^##\s+\[?([^\]\s]+)\]?")
@@ -53,22 +58,124 @@ VERSION_HEADER = re.compile(r"^##\s+\[?([^\]\s]+)\]?")
 HTTP_TIMEOUT = 30
 
 
-def load_config() -> dict:
-    if not CONFIG.is_file():
-        return {"repos": [], "state": {}}
+def load_env_files(root: Path) -> None:
+    """Fill os.environ from <root>/.env then <root>/.env.local (later file wins;
+    keys set in the process environment always win over both). Plain KEY=VALUE
+    lines, optional leading 'export ', '#' comments, blank lines ignored."""
+    process_keys = set(os.environ)
+    for name in (".env", ".env.local"):
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for raw in lines:
+            line = raw.strip()
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip("'\"")
+            if key and key not in process_keys:
+                os.environ[key] = value
+
+
+MACRO_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def expand_macros(value):
+    """Expand ${VAR} / ${VAR:-default} in strings (unset or empty -> default,
+    else ""). Non-strings pass through unchanged."""
+    if isinstance(value, str):
+        return MACRO_RE.sub(
+            lambda m: os.environ.get(m.group(1)) or (m.group(2) or ""), value
+        )
+    return value
+
+
+def load_config_section(root: Path, section: str) -> dict:
+    """Read one optional section of kb-config.{yaml,yml,json} at the vault root.
+    Missing file or section -> {}. ${VAR} macros expand from the environment
+    (process env, then .env/.env.local loaded above). Kept inline per the
+    no-shared-import rule: a skill copied on its own must keep working."""
+    candidates = [root / "kb-config.yaml", root / "kb-config.yml", root / "kb-config.json"]
+    path = next((p for p in candidates if p.is_file()), None)
+    if path is None:
+        return {}
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == ".json":
+        try:
+            cfg = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise SystemExit(f"{path} is not valid JSON: {e}")
+    else:
+        try:
+            import yaml
+        except ImportError:
+            raise SystemExit(
+                f"{path} needs PyYAML, which is not installed.\n"
+                "Run: uv add pyyaml   (or: python3 -m pip install pyyaml)"
+            )
+        try:
+            cfg = yaml.safe_load(text)
+        except Exception as e:
+            raise SystemExit(f"{path} is not valid YAML: {e}")
+    if not isinstance(cfg, dict):
+        raise SystemExit(f"{path} must contain a mapping at the top level")
+    sec = cfg.get(section) or {}
+    if not isinstance(sec, dict):
+        raise SystemExit(f"{path}: '{section}' must be a mapping")
+    return {k: expand_macros(v) for k, v in sec.items()}
+
+
+def watch_list(cfg: dict) -> list[dict]:
+    """Validate the `repos` config into the ordered list the scanners expect.
+    Each entry needs exactly one of `github` (owner/repo) or `path` (local
+    clone; vault-relative allowed, may point outside — it is read-only)."""
+    repos: list[dict] = []
+    for name, entry in cfg.items():
+        if not isinstance(entry, dict):
+            raise SystemExit(f"kb-config repos.{name} must be a mapping")
+        entry = dict(entry)
+        has_github, has_path = "github" in entry, "path" in entry
+        if has_github == has_path:
+            raise SystemExit(f"kb-config repos.{name}: needs exactly one of 'github' or 'path'")
+        if has_github and ("/" not in str(entry["github"]) or len(str(entry["github"]).split("/")) != 2):
+            raise SystemExit(f"kb-config repos.{name}.github must be '<owner>/<repo>': {entry['github']!r}")
+        if has_path:
+            p = str(entry["path"])
+            if not os.path.isabs(p):
+                entry["path"] = str((VAULT / p).resolve())
+        entry.setdefault("name", name)
+        repos.append(entry)
+    return repos
+
+
+def load_state() -> dict:
+    """Scan state is derived: missing/corrupt file -> {} (forces full rescan).
+    Legacy files that also carried a 'repos' watch list are tolerated."""
+    if not STATE_FILE.is_file():
+        return {}
     try:
-        data = json.loads(CONFIG.read_text())
+        data = json.loads(STATE_FILE.read_text())
     except (OSError, ValueError) as error:
-        print(f"error: cannot parse {CONFIG}: {error}", file=sys.stderr)
-        sys.exit(1)
-    data.setdefault("repos", [])
-    data.setdefault("state", {})
-    return data
+        print(f"warning: cannot parse {STATE_FILE} ({error}); starting fresh", file=sys.stderr)
+        return {}
+    if isinstance(data, dict) and isinstance(data.get("state"), dict):
+        return data["state"]
+    return {} if not isinstance(data, dict) else data.get("state", {})
 
 
-def save_config(data: dict) -> None:
-    CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n")
+def save_state(state: dict) -> None:
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STATE_FILE.write_text(json.dumps({"state": state}, ensure_ascii=False, indent=1) + "\n")
+
+load_env_files(VAULT)
+REPOS = watch_list(load_config_section(VAULT, "repos"))
 
 
 def git(path: str, *args: str) -> str:
@@ -229,63 +336,26 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_list = sub.add_parser("repos", help="list watched repos")
-    p_add = sub.add_parser("add", help="add a repo to the watch list")
-    p_add.add_argument("name")
-    group = p_add.add_mutually_exclusive_group(required=True)
-    group.add_argument("--path", help="local clone path")
-    group.add_argument("--github", help="owner/repo for the releases feed")
-    p_add.add_argument("--target-page", help="wiki page claims point at")
-    p_rm = sub.add_parser("remove", help="stop watching a repo")
-    p_rm.add_argument("name")
-
+    p_list = sub.add_parser("repos", help="list watched repos (from kb-config.yaml `repos`)")
     p_scan = sub.add_parser("scan", help="draft claims for changes since the last scan")
     p_scan.add_argument("--json", action="store_true")
     p_scan.add_argument("--commit", action="store_true", help="advance the state after reporting")
     p_scan.add_argument("repos", nargs="*", help="restrict to these repo names")
 
     args = parser.parse_args(argv)
-    data = load_config()
+    states = load_state()
 
     if args.cmd == "repos":
-        for repo in data["repos"]:
-            name = repo.get("name") or repo.get("github") or repo.get("path")
+        for repo in REPOS:
+            name = repo.get("name")
             kind = "local" if "path" in repo else "github"
             where = repo.get("path") or repo.get("github")
-            print(f"{name:32} {kind:6} {where}  last={data['state'].get(name, {}).get('last_commit', data['state'].get(name, {}).get('last_seen', 'never'))[:12]}")
-        return 0
-
-    if args.cmd == "add":
-        entry = {"name": args.name}
-        if args.path:
-            entry["path"] = str(Path(args.path).resolve())
-        else:
-            entry["github"] = args.github
-        if args.target_page:
-            entry["target_page"] = args.target_page
-        if any((r.get("name") or r.get("github") or r.get("path")) == args.name for r in data["repos"]):
-            print(f"error: {args.name} already watched", file=sys.stderr)
-            return 2
-        data["repos"].append(entry)
-        save_config(data)
-        print(f"added {args.name}")
-        return 0
-
-    if args.cmd == "remove":
-        before = len(data["repos"])
-        data["repos"] = [
-            r for r in data["repos"] if (r.get("name") or r.get("github") or r.get("path")) != args.name
-        ]
-        data["state"].pop(args.name, None)
-        if len(data["repos"]) == before:
-            print(f"error: {args.name} not watched", file=sys.stderr)
-            return 2
-        save_config(data)
-        print(f"removed {args.name}")
+            last = states.get(name, {}).get("last_commit", states.get(name, {}).get("last_seen", "never"))
+            print(f"{name:32} {kind:6} {where}  last={str(last)[:12]}")
         return 0
 
     if args.cmd == "scan":
-        per_repo, new_states = scan(data["repos"], data["state"], args.repos or None)
+        per_repo, new_states = scan(REPOS, states, args.repos or None)
         claims = [c for cs in per_repo.values() for c in cs]
         if args.json:
             print(json.dumps({"repos": {k: len(v) for k, v in per_repo.items()}, "claims": claims}, ensure_ascii=False, indent=1))
@@ -296,8 +366,7 @@ def main(argv=None) -> int:
                     print(f"  - {claim['claim']}")
             print(f"total: {len(claims)} draft claims")
         if args.commit:
-            data["state"] = new_states
-            save_config(data)
+            save_state(new_states)
         return 0
 
     return 2

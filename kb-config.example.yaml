@@ -100,3 +100,15 @@ decisions:
   # questions are a RECORD keyed by id.
   model: ${WIKI_VET_MODEL:-clef-flash:9b}
   endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
+
+repos:
+  # Related repos this KB tracks (wiki-git-ingest). Map keyed by name;
+  # exactly one of `github` (owner/repo, releases feed) or `path` (local
+  # clone, read-only, vault-relative allowed) per entry. Optional
+  # target_page defaults to wiki/x-radar/<name>.md.
+  llama-cpp:
+    github: ggml-org/llama.cpp
+    target_page: wiki/x-radar/llama-cpp.md
+  #my-spike:
+  #  path: ../my-project-spike
+  #  target_page: wiki/spike/my-spike.md
