@@ -3,6 +3,7 @@ kb-config.json
 __pycache__/
 
 # Local tooling state, not part of the skill source
+.cliptunnel_controller_seq
 .atl/
 .opendevbrowser/
 .opencode/
