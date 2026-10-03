@@ -16,7 +16,7 @@ python3 scripts/wiki-semsearch.py status                 # counts, staleness, ba
 python3 scripts/wiki-semsearch.py query "TEXT" [--top 8] [--mode hybrid|bm25|vector] [--json]
 ```
 
-Model via `--model` or `WIKI_SEM_MODEL` (default `bge-m3`); server via `WIKI_SEM_ENDPOINT` or the shared `WIKI_OLLAMA_URL` (default `http://127.0.0.1:11434`; `/api/embed` is appended). Settings load from vault-root `.env` then `.env.local` (process env wins, later file wins; see `.env.example`). Index at `.vault-meta/sem/index.db` (`WIKI_SEM_DB` override) — a derived cache: delete and rebuild anytime (~6 s for a 35-page vault; a full rebuild also happens automatically when the model changes). `vector` mode needs the embedding endpoint up; `bm25` works offline.
+Config in kb-config.yaml `embeddings` section (model, server base URL with `/api/embed` appended, index path); values support `${VAR}`/`${VAR:-default}` macros from the environment incl. vault-root `.env`/`.env.local` (`.env.example`). Without config: `bge-m3` at `127.0.0.1:11434`, index at `.vault-meta/sem/index.db` — a derived cache: delete and rebuild anytime (~6 s for a 35-page vault; a full rebuild also happens automatically when the model changes). `vector` mode needs the embedding endpoint up; `bm25` works offline.
 
 ## Workflow
 

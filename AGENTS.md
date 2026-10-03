@@ -25,9 +25,12 @@ consume copies; changes that benefit every project belong here.
    watch lists come from `kb-config.yaml` at the vault root or environment
    variables, with boring defaults. Copy `kb-config.example.yaml` when adding a
    section, and keep credentials in env/`.env.local`, never in config.
-   Scripts load vault-root `.env` then `.env.local` at startup (process env wins,
-   later file wins; `load_env_files` is inlined per skill, never imported). Copy
-   `.env.example` when wiring a vault.
+   Config values may carry `${VAR}` / `${VAR:-default}` macros expanded from
+   the environment; scripts load vault-root `.env` then `.env.local` at startup
+   (process env wins, later file wins; the loader and the macro expander are
+   inlined per skill, never imported — precedent: `load_config` in
+   `kb-jira-sync`). Copy `.env.example` when wiring a vault. Precedence overall:
+   CLI flag > kb-config value (macro-expanded) > built-in default.
 3. **Gates must fail**: before trusting any lint/gate, inject a fault and
    confirm a non-zero exit. A gate that has never failed has never been tested.
 4. **Python stdlib only** for the wiki tooling (urllib, json, sqlite3, hashlib,

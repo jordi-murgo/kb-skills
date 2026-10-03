@@ -9,10 +9,12 @@ Subcommands:
 Fully local: BM25 via sqlite FTS5 (own inverted-index fallback when FTS5 is
 unavailable), embeddings via the local Ollama /api/embed endpoint.
 
-Environment overrides (specific wins over the shared WIKI_OLLAMA_URL):
-WIKI_SEM_ENDPOINT (base URL of the embeddings server; /api/embed is appended),
-WIKI_SEM_MODEL (embedding model, default bge-m3), WIKI_SEM_DB (index path),
-WIKI_SEM_NO_FTS5=1 (force the fallback inverted index).
+Config: the `embeddings` section of kb-config.yaml at the vault root (model,
+endpoint base URL with /api/embed appended, db path relative to the root).
+Values support ${VAR} / ${VAR:-default} macros expanded from the environment
+(process env, then vault-root .env / .env.local). Without config everything
+targets a local Ollama on 127.0.0.1:11434. WIKI_SEM_NO_FTS5=1 forces the
+fallback inverted index.
 """
 
 import argparse
@@ -73,18 +75,71 @@ def load_env_files(root: Path) -> None:
             if key and key not in process_keys:
                 os.environ[key] = value
 
+MACRO_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def expand_macros(value):
+    """Expand ${VAR} / ${VAR:-default} in strings (unset or empty -> default,
+    else ""). Non-strings pass through unchanged."""
+    if isinstance(value, str):
+        return MACRO_RE.sub(
+            lambda m: os.environ.get(m.group(1)) or (m.group(2) or ""), value
+        )
+    return value
+
+
+def load_config_section(root: Path, section: str) -> dict:
+    """Read one optional section of kb-config.{yaml,yml,json} at the vault root.
+    Missing file or section -> {}. ${VAR} macros expand from the environment
+    (process env, then .env/.env.local loaded above). Kept inline per the
+    no-shared-import rule: a skill copied on its own must keep working."""
+    candidates = [root / "kb-config.yaml", root / "kb-config.yml", root / "kb-config.json"]
+    path = next((p for p in candidates if p.is_file()), None)
+    if path is None:
+        return {}
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == ".json":
+        try:
+            cfg = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise SystemExit(f"{path} is not valid JSON: {e}")
+    else:
+        try:
+            import yaml
+        except ImportError:
+            raise SystemExit(
+                f"{path} needs PyYAML, which is not installed.\n"
+                "Run: uv add pyyaml   (or: python3 -m pip install pyyaml)"
+            )
+        try:
+            cfg = yaml.safe_load(text)
+        except Exception as e:
+            raise SystemExit(f"{path} is not valid YAML: {e}")
+    if not isinstance(cfg, dict):
+        raise SystemExit(f"{path} must contain a mapping at the top level")
+    sec = cfg.get(section) or {}
+    if not isinstance(sec, dict):
+        raise SystemExit(f"{path}: '{section}' must be a mapping")
+    return {k: expand_macros(v) for k, v in sec.items()}
+
+
+def vault_path(root: Path, rel: str, key: str) -> Path:
+    """Resolve a config path relative to the vault root; absolute/~/'..' are
+    rejected, matching the contract in kb-config.example.yaml."""
+    if os.path.isabs(rel) or rel.startswith("~") or ".." in Path(rel).parts:
+        raise SystemExit(f"kb-config {key} must be relative to the vault root, got: {rel}")
+    return root / rel
+
 
 VAULT_ROOT = find_vault_root()
 load_env_files(VAULT_ROOT)
+_CFG = load_config_section(VAULT_ROOT, "embeddings")
 WIKI_DIR = VAULT_ROOT / "wiki"
-DEFAULT_DB = VAULT_ROOT / ".vault-meta" / "sem" / "index.db"
-DEFAULT_MODEL = os.environ.get("WIKI_SEM_MODEL", "bge-m3")
-OLLAMA_URL = (
-    os.environ.get("WIKI_SEM_ENDPOINT")
-    or os.environ.get("WIKI_OLLAMA_URL")
-    or "http://127.0.0.1:11434"
-)
-DB_PATH = Path(os.environ.get("WIKI_SEM_DB", str(DEFAULT_DB)))
+_db = _CFG.get("db")
+DEFAULT_DB = vault_path(VAULT_ROOT, _db, "embeddings.db") if _db else VAULT_ROOT / ".vault-meta" / "sem" / "index.db"
+DEFAULT_MODEL = _CFG.get("model") or "bge-m3"
+OLLAMA_URL = _CFG.get("endpoint") or "http://127.0.0.1:11434"
+DB_PATH = DEFAULT_DB
 
 EMBED_BATCH = 32
 EMBED_TIMEOUT = 180
@@ -724,9 +779,9 @@ def parse_args(argv):
         prog="wiki_semsearch.py",
         description="Local hybrid (BM25 + vector + RRF) search over the wiki vault.",
         epilog=(
-            "environment: WIKI_SEM_ENDPOINT or WIKI_OLLAMA_URL (base URL,"
-            " default http://127.0.0.1:11434), WIKI_SEM_MODEL (default bge-m3),"
-            " WIKI_SEM_DB (index path), WIKI_SEM_NO_FTS5=1 (force fallback inverted index)"
+            "config: kb-config.yaml `embeddings` section (model / endpoint base"
+            " URL / db path), ${VAR} macros expand from env incl. .env/.env.local;"
+            " default http://127.0.0.1:11434. WIKI_SEM_NO_FTS5=1 forces the fallback inverted index"
         ),
     )
     sub = p.add_subparsers(dest="cmd", required=True)

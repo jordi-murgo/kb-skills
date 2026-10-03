@@ -9,6 +9,7 @@ duplicate; reject = sensitive or not grounded; otherwise review.
 import argparse
 import os
 import json
+import re
 import socket
 import sys
 import urllib.error
@@ -58,9 +59,57 @@ def load_env_files(root: Path) -> None:
             if key and key not in process_keys:
                 os.environ[key] = value
 
+MACRO_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def expand_macros(value):
+    """Expand ${VAR} / ${VAR:-default} in strings (unset or empty -> default,
+    else ""). Non-strings pass through unchanged."""
+    if isinstance(value, str):
+        return MACRO_RE.sub(
+            lambda m: os.environ.get(m.group(1)) or (m.group(2) or ""), value
+        )
+    return value
+
+
+def load_config_section(root: Path, section: str) -> dict:
+    """Read one optional section of kb-config.{yaml,yml,json} at the vault root.
+    Missing file or section -> {}. ${VAR} macros expand from the environment
+    (process env, then .env/.env.local loaded above). Kept inline per the
+    no-shared-import rule: a skill copied on its own must keep working."""
+    candidates = [root / "kb-config.yaml", root / "kb-config.yml", root / "kb-config.json"]
+    path = next((p for p in candidates if p.is_file()), None)
+    if path is None:
+        return {}
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == ".json":
+        try:
+            cfg = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise SystemExit(f"{path} is not valid JSON: {e}")
+    else:
+        try:
+            import yaml
+        except ImportError:
+            raise SystemExit(
+                f"{path} needs PyYAML, which is not installed.\n"
+                "Run: uv add pyyaml   (or: python3 -m pip install pyyaml)"
+            )
+        try:
+            cfg = yaml.safe_load(text)
+        except Exception as e:
+            raise SystemExit(f"{path} is not valid YAML: {e}")
+    if not isinstance(cfg, dict):
+        raise SystemExit(f"{path} must contain a mapping at the top level")
+    sec = cfg.get(section) or {}
+    if not isinstance(sec, dict):
+        raise SystemExit(f"{path}: '{section}' must be a mapping")
+    return {k: expand_macros(v) for k, v in sec.items()}
+
 
 REPO_ROOT = find_vault_root()
 load_env_files(REPO_ROOT)
+_CFG = load_config_section(REPO_ROOT, "decisions")
 
 
 VAULT_INDEX_PATH = REPO_ROOT / "wiki" / "index.md"
@@ -120,17 +169,13 @@ def parse_args(argv):
     )
     parser.add_argument(
         "--model",
-        default=os.environ.get("WIKI_VET_MODEL", "clef-flash:9b"),
-        help="systemone model tag (env WIKI_VET_MODEL, default clef-flash:9b).",
+        default=_CFG.get("model") or "clef-flash:9b",
+        help="systemone model tag (kb-config decisions.model, default clef-flash:9b).",
     )
     parser.add_argument(
         "--endpoint",
-        default=(
-            os.environ.get("WIKI_VET_ENDPOINT")
-            or os.environ.get("WIKI_OLLAMA_URL")
-            or "http://127.0.0.1:11434"
-        ),
-        help="inference server base URL (env WIKI_VET_ENDPOINT, else WIKI_OLLAMA_URL);"
+        default=_CFG.get("endpoint") or "http://127.0.0.1:11434",
+        help="inference server base URL (kb-config decisions.endpoint);"
         " /v1/systemone is appended.",
     )
     return parser.parse_args(argv)
