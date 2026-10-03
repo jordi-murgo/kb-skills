@@ -24,15 +24,42 @@ def find_wiki_root(start: str = ".") -> str:
 
 def get_all_wiki_pages(wiki_root: str) -> set[str]:
     """Get all .md filenames (without extension) in the wiki tree.
-    Also includes path-qualified stems like 'infrastructure/_index'."""
+    Also includes path-qualified stems like 'infrastructure/_index' and
+    full paths relative to wiki/ (e.g. 'concepts/galatea-catalogo/content/bs-text').
+    Also includes auto-generated directory index slugs (e.g. 'concepts/galatea-catalogo/content')
+    for directories that don't have a .md file with the same name."""
     pages = set()
-    for md_file in glob.glob(f"{wiki_root}/wiki/**/*.md", recursive=True):
+    wiki_dir = Path(f"{wiki_root}/wiki")
+    for md_file in glob.glob(f"{wiki_root}/wiki/**/*.md", recursive=True) + glob.glob(f"{wiki_root}/wiki/.reciclaje/**/*.md", recursive=True):
         stem = Path(md_file).stem
         pages.add(stem)
         # Also add path-relative stem (e.g. "infrastructure/_index")
         rel = os.path.relpath(md_file, f"{wiki_root}/wiki")
         rel_stem = str(Path(rel).with_suffix(""))
         pages.add(rel_stem)
+        # Also add the full path relative to repo root (e.g. "wiki/concepts/...")
+        full_rel = os.path.relpath(md_file, wiki_root)
+        pages.add(str(Path(full_rel).with_suffix("")))
+
+    # Add auto-generated directory index slugs: for each subdirectory that
+    # contains .md files but does NOT have a .md file with the same name,
+    # add the directory path as a valid slug (the deploy generates these).
+    for d in sorted(wiki_dir.rglob("*")):
+        if not d.is_dir():
+            continue
+        rel_dir = str(d.relative_to(wiki_dir))
+        if not rel_dir or rel_dir == ".":
+            continue
+        # Check if this directory has any .md files (direct or recursive)
+        if not any(d.rglob("*.md")):
+            continue
+        # Check if a .md file with the same name exists at the parent level
+        parent = d.parent
+        if (parent / f"{d.name}.md").exists():
+            continue  # A flat page with this name already exists
+        # Add the directory path as a valid slug
+        pages.add(rel_dir)
+
     return pages
 
 

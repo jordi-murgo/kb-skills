@@ -23,15 +23,33 @@ fi
 cd "$REPO_DIR"
 
 # Project configuration — nothing project-specific lives in this script
-CFG="$REPO_DIR/kb-config.json"
+# Resolves kb-config.yaml → kb-config.yml → kb-config.json (legacy).
+CFG="$REPO_DIR/kb-config.yaml"
 if [ ! -f "$CFG" ]; then
-    echo "❌ Config not found: $CFG"
-    echo "   Copy kb-config.example.json from the kb-skills repo and fill it in."
+    CFG="$REPO_DIR/kb-config.yml"
+fi
+if [ ! -f "$CFG" ]; then
+    CFG="$REPO_DIR/kb-config.json"
+fi
+if [ ! -f "$CFG" ]; then
+    echo "❌ Config not found (tried kb-config.yaml/.yml/.json in $REPO_DIR)"
+    echo "   Copy kb-config.example.yaml from the kb-skills repo and fill it in."
     exit 1
 fi
+# Read a value from gitlab_wiki, supporting both YAML and legacy JSON.
 read_cfg() { python3 -c "
-import json,sys
-cfg=json.load(open('$CFG')).get('wiki_publish',{})
+import sys
+path='$CFG'
+if path.endswith('.json'):
+    import json
+    cfg=json.load(open(path))
+else:
+    try:
+        import yaml
+        cfg=yaml.safe_load(open(path))
+    except ImportError:
+        sys.exit('❌ PyYAML not installed (python3 -m pip install pyyaml)')
+cfg=cfg.get('gitlab_wiki',{})
 v=cfg.get('$1', '$2')
 print('' if v is None else ('true' if v is True else ('false' if v is False else v)))"; }
 
@@ -42,7 +60,7 @@ VPN_PREFIX=$(read_cfg vpn_private_prefix "10.")
 # Verify VPN — the host must resolve to a private IP
 if [ "$VPN_REQUIRED" = "true" ]; then
     if [ -z "$VPN_HOST" ]; then
-        echo "❌ wiki_publish.vpn_required is true but vpn_host is missing in kb-config.json"
+        echo "❌ gitlab_wiki.vpn_required is true but vpn_host is missing in kb-config.yaml"
         exit 1
     fi
     GIT_IP=$(host "$VPN_HOST" 2>/dev/null | awk '/has address/ {print $NF}' | head -1)
@@ -62,13 +80,14 @@ fi
 
 # Push to the main repo
 echo "📦 Pushing to the main repo..."
+PRE_PUSH=$(git rev-parse HEAD)
 git push "$@"
 
-# If there are changes in wiki/, deploy
-CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep "^wiki/" | head -1)
+# If there are changes in wiki/, deploy (diff ALL commits pushed, not just HEAD~1)
+CHANGED=$(git diff --name-only "$PRE_PUSH" HEAD 2>/dev/null | grep "^wiki/" | head -1)
 if [ -n "$CHANGED" ]; then
     echo "📋 Changes in wiki/ detected — deploying to GitLab Wiki..."
-    python3 "$SCRIPT_DIR/deploy-wiki.py"
+    python3 "$SCRIPT_DIR/deploy-gitlab-wiki.py"
 else
     echo "ℹ No changes in wiki/ — skip deploy"
 fi
