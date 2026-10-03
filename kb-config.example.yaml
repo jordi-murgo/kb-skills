@@ -103,12 +103,24 @@ decisions:
 
 repos:
   # Related repos this KB tracks (wiki-git-ingest). Map keyed by name;
-  # exactly one of `github` (owner/repo, releases feed) or `path` (local
-  # clone, read-only, vault-relative allowed) per entry. Optional
-  # target_page defaults to wiki/x-radar/<name>.md.
+  # exactly ONE forge key per entry; optional target_page (default
+  # wiki/x-radar/<name>.md); ${VAR} macros work.
+  # GitHub public — releases.atom, no key:
   llama-cpp:
     github: ggml-org/llama.cpp
     target_page: wiki/x-radar/llama-cpp.md
+  # GitHub Enterprise or any Atom feed — full URL:
+  #ghe-repo:
+  #  atom: https://github.enterprise.example/org/repo/releases.atom
+  # GitLab (self-hosted or gitlab.com) — REST v4 releases; token_env names
+  # an env var holding a read_api personal access token for private projects:
+  #gft-repo:
+  #  gitlab: git.gft.com/group/project
+  #  token_env: GFT_GITLAB_TOKEN
+  # Bitbucket Cloud — tags:
+  #bb-repo:
+  #  bitbucket: workspace/repo
+  # Any local clone (any forge) — git log + CHANGELOG.md, read-only:
   #my-spike:
   #  path: ../my-project-spike
   #  target_page: wiki/spike/my-spike.md

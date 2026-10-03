@@ -15,7 +15,7 @@ python3 scripts/wiki-git-ingest.py repos                      # watched + last s
 python3 scripts/wiki-git-ingest.py scan [--json] [--commit] [names...]
 ```
 
-The watch list is CONFIG, not state: the `repos` section of kb-config.yaml, map keyed by name, exactly one of `github: <owner>/<repo>` (releases feed, no key, no clone) or `path: <local clone>` (read-only, vault-relative allowed) per entry; optional `target_page` (default `wiki/x-radar/<name>.md`); `${VAR}` macros expand like everywhere else. Edit the yaml to watch/unwatch.
+The watch list is CONFIG, not state: the `repos` section of kb-config.yaml, map keyed by name, exactly ONE forge key per entry — `github: <owner/repo>` (github.com releases.atom), `atom: <full releases-Atom URL>` (GitHub Enterprise/anything Atom), `gitlab: [host/]<group/project>` (REST v4 releases; gitlab.com when no host; `token_env: <env var>` for private projects), `bitbucket: <workspace/repo>` (tags), or `path: <local clone>` (any forge, read-only) — plus optional `target_page` (default `wiki/x-radar/<name>.md`); `${VAR}` macros expand like everywhere else. Edit the yaml to watch/unwatch.
 
 Local clones: `git log` + CHANGELOG.md version-diff, falling back to conventional commits (`feat`/`fix`/`perf`/`!`) since the last seen sha — claims quote changelog bullets verbatim, full four-axis vetting. GitHub repos: `releases.atom` — claims carry `source` (release URL) and `skip_grounded: true`.
 

@@ -3,10 +3,14 @@
 
 The watch list lives in the `repos` section of kb-config.yaml at the vault
 root (map keyed by name; values support ${VAR} macros like the rest of the
-config). Two kinds are supported:
-  - {path: <local clone>}        -> git log + CHANGELOG.md diff since the last seen commit
-  - {github: "<owner>/<repo>"}   -> GitHub releases.atom (no API key, no clone)
-Scan state (last seen sha/release) is derived state in .vault-meta/repos.json —
+config). Each entry takes exactly one forge key:
+  - {path: <local clone>}                     -> git log + CHANGELOG.md diff (any forge)
+  - {github: "<owner>/<repo>"}                -> github.com releases.atom (no key)
+  - {atom: <full releases-Atom URL>}          -> GitHub Enterprise or anything Atom
+  - {gitlab: "[host/]<group/project>"}        -> GitLab REST v4 releases (gitlab.com
+                                                 when no host); token_env for private
+  - {bitbucket: "<workspace>/<repo>"}         -> bitbucket.org tags
+Scan state (last seen sha/release/tag) is derived state in .vault-meta/repos.json —
 deleting it only forces a full rescan.
 
 `scan` prints what is new since the last run and emits claims shaped for
@@ -22,6 +26,7 @@ import os
 import argparse
 import datetime as dt
 import json
+import urllib.parse
 import re
 import subprocess
 import sys
@@ -132,24 +137,48 @@ def load_config_section(root: Path, section: str) -> dict:
     return {k: expand_macros(v) for k, v in sec.items()}
 
 
+FORGE_KEYS = ("github", "atom", "gitlab", "bitbucket", "path")
+
+
 def watch_list(cfg: dict) -> list[dict]:
     """Validate the `repos` config into the ordered list the scanners expect.
-    Each entry needs exactly one of `github` (owner/repo) or `path` (local
-    clone; vault-relative allowed, may point outside — it is read-only)."""
+    Each entry needs exactly one forge key:
+      github:    '<owner>/<repo>' on github.com (releases.atom, no key)
+      atom:      full releases-Atom URL — GitHub Enterprise or anything Atom
+      gitlab:    '[host/]<group/project>' via REST v4 releases (gitlab.com when
+                 no host); optional token_env names an env var for private repos
+      bitbucket: '<workspace>/<repo>' on bitbucket.org (tags feed)
+      path:      local clone of any forge (git log; read-only; vault-relative
+                 allowed, may point outside the vault)
+    ${VAR} macros already expanded by the config loader."""
     repos: list[dict] = []
     for name, entry in cfg.items():
         if not isinstance(entry, dict):
             raise SystemExit(f"kb-config repos.{name} must be a mapping")
         entry = dict(entry)
-        has_github, has_path = "github" in entry, "path" in entry
-        if has_github == has_path:
-            raise SystemExit(f"kb-config repos.{name}: needs exactly one of 'github' or 'path'")
-        if has_github and ("/" not in str(entry["github"]) or len(str(entry["github"]).split("/")) != 2):
-            raise SystemExit(f"kb-config repos.{name}.github must be '<owner>/<repo>': {entry['github']!r}")
-        if has_path:
-            p = str(entry["path"])
-            if not os.path.isabs(p):
-                entry["path"] = str((VAULT / p).resolve())
+        present = [k for k in FORGE_KEYS if k in entry]
+        if len(present) != 1:
+            raise SystemExit(
+                f"kb-config repos.{name}: needs exactly one of {', '.join(FORGE_KEYS)} (has: {present or 'none'})"
+            )
+        kind = present[0]
+        value = str(entry[kind])
+        if kind == "github" and value.count("/") != 1:
+            raise SystemExit(f"kb-config repos.{name}.github must be '<owner>/<repo>': {value!r}")
+        if kind == "bitbucket" and value.count("/") != 1:
+            raise SystemExit(f"kb-config repos.{name}.bitbucket must be '<workspace>/<repo>': {value!r}")
+        if kind == "atom" and not value.startswith(("http://", "https://")):
+            raise SystemExit(f"kb-config repos.{name}.atom must be a full http(s) URL: {value!r}")
+        if kind == "gitlab":
+            first, sep, rest = value.partition("/")
+            if not sep or not rest:
+                raise SystemExit(f"kb-config repos.{name}.gitlab must be '[host/]<group/project>': {value!r}")
+            if "." in first:
+                entry["host"], entry["project"] = first, rest
+            else:
+                entry["host"], entry["project"] = "gitlab.com", value
+        if kind == "path" and not os.path.isabs(value):
+            entry["path"] = str((VAULT / value).resolve())
         entry.setdefault("name", name)
         repos.append(entry)
     return repos
@@ -263,11 +292,23 @@ def scan_local(repo: dict, state: dict) -> tuple[list[dict], dict]:
     return claims, state
 
 
-def scan_github(repo: dict, state: dict) -> tuple[list[dict], dict]:
-    owner_repo = repo["github"]
-    url = f"https://github.com/{owner_repo}/releases.atom"
-    with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT) as response:
-        feed = ET.fromstring(response.read())
+def http_get(url: str, headers: dict | None = None) -> bytes:
+    request = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
+        return response.read()
+
+
+def _headline(text: str) -> str:
+    """First meaningful line of a release body, stripped of markup sugar."""
+    for raw in text.splitlines():
+        line = re.sub(r"<[^>]+>", "", raw).strip().lstrip("#*- ").strip()
+        if line:
+            return line[:200]
+    return ""
+
+
+def scan_atom(repo: dict, state: dict, url: str, display: str) -> tuple[list[dict], dict]:
+    feed = ET.fromstring(http_get(url))
     last_seen = state.get("last_seen")
     last_seen_dt = dt.datetime.fromisoformat(last_seen) if last_seen else None
 
@@ -287,18 +328,106 @@ def scan_github(repo: dict, state: dict) -> tuple[list[dict], dict]:
             continue
         if newest is None or updated_dt > newest:
             newest = updated_dt
-        text_lines = [re.sub(r"<[^>]+>", "", ln).strip() for ln in content.splitlines()]
-        first_lines = [ln for ln in text_lines if ln][:5]
-        headline = first_lines[0] if first_lines else title
-        claim = f"{owner_repo} released {title}" if headline == title else f"{owner_repo} released {title}: {headline}"
+        headline = _headline(content) or title
+        claim = f"{display} released {title}" if headline == title else f"{display} released {title}: {headline}"
         link_el = entry.find("a:link", ATOM_NS)
         link = link_el.get("href", "").strip() if link_el is not None else ""
         claims.append(
             {
                 "claim": claim,
                 "quote": f"{title}\n{headline}"[:800],
-                "target_page": repo.get("target_page", f"wiki/x-radar/{owner_repo.replace('/', '-')}.md"),
+                "target_page": repo.get("target_page", f"wiki/x-radar/{display.replace('/', '-')}.md"),
                 "source": link,
+                "skip_grounded": True,
+            }
+        )
+
+    if newest is not None:
+        state["last_seen"] = newest.isoformat()
+    return claims, state
+
+
+def scan_gitlab(repo: dict, state: dict) -> tuple[list[dict], dict]:
+    host, project = repo["host"], repo["project"]
+    encoded = urllib.parse.quote(project, safe="")
+    url = f"https://{host}/api/v4/projects/{encoded}/releases?per_page=20"
+    headers = {}
+    token_env = repo.get("token_env")
+    if token_env and os.environ.get(token_env):
+        headers["PRIVATE-TOKEN"] = os.environ[token_env]
+    raw = http_get(url, headers)
+    try:
+        releases = json.loads(raw)
+    except ValueError:
+        raise RuntimeError(
+            f"{url} returned non-JSON (login page? private project?)"
+            + (f" — set {token_env} for PRIVATE-TOKEN auth" if token_env else " — add token_env to the repo entry")
+        )
+    last_seen = state.get("last_seen")
+    last_seen_dt = dt.datetime.fromisoformat(last_seen) if last_seen else None
+
+    claims: list[dict] = []
+    newest = last_seen_dt
+    display = f"{host}/{project}"
+    for release in releases if isinstance(releases, list) else []:
+        tag = str(release.get("tag_name") or "").strip()
+        when = str(release.get("released_at") or release.get("created_at") or "").strip()
+        if not tag or not when:
+            continue
+        try:
+            when_dt = dt.datetime.fromisoformat(when.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if last_seen_dt is not None and when_dt <= last_seen_dt:
+            continue
+        if newest is None or when_dt > newest:
+            newest = when_dt
+        headline = _headline(str(release.get("description") or ""))
+        claim = f"{display} released {tag}" if not headline else f"{display} released {tag}: {headline}"
+        claims.append(
+            {
+                "claim": claim,
+                "quote": f"{tag}\n{headline}"[:800],
+                "target_page": repo.get("target_page", f"wiki/x-radar/{display.replace('/', '-')}.md"),
+                "source": f"https://{host}/{project}/-/releases/{tag}",
+                "skip_grounded": True,
+            }
+        )
+
+    if newest is not None:
+        state["last_seen"] = newest.isoformat()
+    return claims, state
+
+
+def scan_bitbucket(repo: dict, state: dict) -> tuple[list[dict], dict]:
+    ws_repo = repo["bitbucket"]
+    url = f"https://api.bitbucket.org/2.0/repositories/{ws_repo}/refs/tags?pagelen=100"
+    data = json.loads(http_get(url))
+    last_seen = state.get("last_seen")
+    last_seen_dt = dt.datetime.fromisoformat(last_seen) if last_seen else None
+
+    claims: list[dict] = []
+    newest = last_seen_dt
+    for tag in data.get("values", []):
+        name = str(tag.get("name") or "").strip()
+        when = str(tag.get("date") or (tag.get("target") or {}).get("date") or "").strip()
+        if not name or not when:
+            continue
+        try:
+            when_dt = dt.datetime.fromisoformat(when.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if last_seen_dt is not None and when_dt <= last_seen_dt:
+            continue
+        if newest is None or when_dt > newest:
+            newest = when_dt
+        claims.append(
+            {
+                "claim": f"{ws_repo} tagged {name}",
+                "quote": name,
+                "target_page": repo.get("target_page", f"wiki/x-radar/{ws_repo.replace('/', '-')}.md"),
+                "source": (tag.get("links") or {}).get("html", {}).get("href")
+                or f"https://bitbucket.org/{ws_repo}/src/{name}",
                 "skip_grounded": True,
             }
         )
@@ -312,7 +441,7 @@ def scan(repos: list[dict], states: dict, selected: list[str] | None) -> tuple[d
     new_states: dict = dict(states)
     per_repo: dict = {}
     for repo in repos:
-        name = repo.get("name") or repo.get("github") or repo.get("path")
+        name = repo.get("name")
         if selected and name not in selected:
             continue
         state = new_states.get(name, {})
@@ -320,9 +449,15 @@ def scan(repos: list[dict], states: dict, selected: list[str] | None) -> tuple[d
             if "path" in repo:
                 claims, state = scan_local(repo, state)
             elif "github" in repo:
-                claims, state = scan_github(repo, state)
+                claims, state = scan_atom(repo, state, f"https://github.com/{repo['github']}/releases.atom", repo["github"])
+            elif "atom" in repo:
+                claims, state = scan_atom(repo, state, repo["atom"], repo["atom"])
+            elif "gitlab" in repo:
+                claims, state = scan_gitlab(repo, state)
+            elif "bitbucket" in repo:
+                claims, state = scan_bitbucket(repo, state)
             else:
-                print(f"skip {name}: needs 'path' or 'github'", file=sys.stderr)
+                print(f"skip {name}: needs one of {', '.join(FORGE_KEYS)}", file=sys.stderr)
                 continue
         except (RuntimeError, OSError, ET.ParseError, ValueError) as error:
             print(f"error scanning {name}: {error}", file=sys.stderr)
@@ -348,10 +483,10 @@ def main(argv=None) -> int:
     if args.cmd == "repos":
         for repo in REPOS:
             name = repo.get("name")
-            kind = "local" if "path" in repo else "github"
-            where = repo.get("path") or repo.get("github")
+            kind = next(k for k in FORGE_KEYS if k in repo)
+            where = f"{repo['host']}/{repo['project']}" if kind == "gitlab" else repo.get(kind)
             last = states.get(name, {}).get("last_commit", states.get(name, {}).get("last_seen", "never"))
-            print(f"{name:32} {kind:6} {where}  last={str(last)[:12]}")
+            print(f"{name:32} {kind:9} {where}  last={str(last)[:12]}")
         return 0
 
     if args.cmd == "scan":
