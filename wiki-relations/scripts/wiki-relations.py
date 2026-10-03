@@ -117,6 +117,10 @@ def load_pages() -> dict[str, dict]:
             target_match = LINK.search(rel.get("target", ""))
             if target_match:
                 entry["relations"].append({"type": rel.get("type", ""), "target": target_match.group(1).strip()})
+            else:
+                # Entry parsed but no [[target]]: block-style YAML or missing link.
+                # Keep it so lint can flag it instead of silently dropping (rule: gates must not pass on corrupt input).
+                entry["relations"].append({"type": rel.get("type", ""), "target": "", "malformed": True})
     return pages
 
 
@@ -125,6 +129,9 @@ def lint(pages: dict[str, dict]) -> list[dict]:
     for title, page in pages.items():
         for rel in page["relations"]:
             rtype, target = rel["type"], rel["target"]
+            if rel.get("malformed"):
+                findings.append({"page": title, "issue": "malformed entry (no [[target]] parsed; use flow style '- {type: X, target: \"[[page]]\"}')", "detail": rtype or "?"})
+                continue
             if rtype not in INVERSES:
                 findings.append({"page": title, "issue": f"unknown type '{rtype}'", "detail": target})
             if target == title:
@@ -138,6 +145,8 @@ def reverse_edges(pages: dict[str, dict]) -> dict[str, list[tuple[str, str]]]:
     edges: dict[str, list[tuple[str, str]]] = {}
     for title, page in pages.items():
         for rel in page["relations"]:
+            if rel.get("malformed"):
+                continue
             edges.setdefault(rel["target"], []).append((rel["type"], title))
     return edges
 
@@ -180,6 +189,8 @@ def main(argv=None) -> int:
                 nxt = []
                 for node in frontier:
                     for rel in pages.get(node, {}).get("relations", []):
+                        if rel.get("malformed"):
+                            continue
                         print(f"{node}  --{rel['type']}-->  {rel['target']}")
                         if rel["target"] not in seen:
                             seen.add(rel["target"])
@@ -188,6 +199,8 @@ def main(argv=None) -> int:
         else:
             for title, page in sorted(pages.items()):
                 for rel in page["relations"]:
+                    if rel.get("malformed"):
+                        continue
                     print(f"{title}  --{rel['type']}-->  {rel['target']}")
         return 0
 
