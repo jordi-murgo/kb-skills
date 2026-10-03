@@ -33,8 +33,36 @@ def find_vault_root() -> Path:
             return parent
     raise SystemExit("error: vault root not found — run inside a project with wiki/")
 
+def load_env_files(root: Path) -> None:
+    """Fill os.environ from <root>/.env then <root>/.env.local (later file wins;
+    keys set in the process environment always win over both). Plain KEY=VALUE
+    lines, optional leading 'export ', '#' comments, blank lines ignored."""
+    process_keys = set(os.environ)
+    for name in (".env", ".env.local"):
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for raw in lines:
+            line = raw.strip()
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip("'\"")
+            if key and key not in process_keys:
+                os.environ[key] = value
+
 
 REPO_ROOT = find_vault_root()
+load_env_files(REPO_ROOT)
+
+
 VAULT_INDEX_PATH = REPO_ROOT / "wiki" / "index.md"
 VAULT_INDEX_CHARS = 4000
 QUOTE_MAX_CHARS = 800
