@@ -102,33 +102,18 @@ decisions:
   endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
 
 repos:
-  # Related repos this KB tracks (wiki-git-ingest). Map keyed by name;
-  # exactly ONE forge key per entry; optional target_page (default
-  # wiki/x-radar/<name>.md); ${VAR} macros work.
-  # GitHub public — releases.atom, no key:
+  # Related repos this KB tracks (wiki-git-ingest). Map keyed by name; the
+  # value is a git remote URL — exactly what git understands in .git/config,
+  # any forge. Tracked with git + YOUR credentials (blobless bare mirror in
+  # .vault-meta/remotes/); new tags become claims. ${VAR} macros work.
+  # Scalar form:
+  sacra-backend: git@git.gft.com:cybersecurity-practice/sacra/sacra-backend.git
+  # Mapping form (adds target_page; default wiki/x-radar/<name>.md):
   llama-cpp:
-    github: ggml-org/llama.cpp
+    remote: https://github.com/ggml-org/llama.cpp.git
     target_page: wiki/x-radar/llama-cpp.md
-  # GitHub Enterprise or any Atom feed — full URL:
-  #ghe-repo:
-  #  atom: https://github.enterprise.example/org/repo/releases.atom
-  # GitLab (self-hosted or gitlab.com) — REST v4 releases; token_env names
-  # an env var holding a read_api personal access token for private projects:
-  #gft-repo:
-  #  gitlab: git.gft.com/group/project
-  #  token_env: GFT_GITLAB_TOKEN
-  # Bitbucket Cloud — tags:
-  #bb-repo:
-  #  bitbucket: workspace/repo
-  # Azure DevOps — tags refs; token_env holds a PAT (Basic auth):
-  #azdo-repo:
-  #  azure: gft-assets/gft-ai-platform/agentic-ai-call
-  #  token_env: AZDO_PAT
-  # Git URLs paste as-is (ssh or https, nested groups, .git suffix):
-  #gft-nested:
-  #  gitlab: git@git.gft.com:group/subgroup/project.git
-  #  token_env: GFT_GITLAB_TOKEN
-  # Any local clone (any forge) — git log + CHANGELOG.md, read-only:
+  # Azure DevOps, any ssh/https remote:
+  #agentic-builder: git@ssh.dev.azure.com:v3/gft-assets/gft-ai-platform/agentic-builder
+  # Existing local clone instead of a mirror (changelog + conventional commits):
   #my-spike:
   #  path: ../my-project-spike
-  #  target_page: wiki/spike/my-spike.md
