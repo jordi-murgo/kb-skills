@@ -7,6 +7,7 @@ duplicate; reject = sensitive or not grounded; otherwise review.
 """
 
 import argparse
+import os
 import json
 import socket
 import sys
@@ -90,12 +91,16 @@ def parse_args(argv):
         "--json", action="store_true", help="Emit machine-readable JSON instead of the human table."
     )
     parser.add_argument(
-        "--model", default="clef-flash:9b", help="systemone model tag (default: clef-flash:9b)."
+        "--model",
+        default=os.environ.get("WIKI_VET_MODEL", "clef-flash:9b"),
+        help="systemone model tag (env WIKI_VET_MODEL, default clef-flash:9b).",
     )
     parser.add_argument(
         "--endpoint",
-        default="http://127.0.0.1:11434/v1/systemone",
-        help="systemone endpoint URL.",
+        default=os.environ.get(
+            "WIKI_VET_ENDPOINT", "http://127.0.0.1:11434/v1/systemone"
+        ),
+        help="systemone endpoint URL (env WIKI_VET_ENDPOINT).",
     )
     return parser.parse_args(argv)
 
