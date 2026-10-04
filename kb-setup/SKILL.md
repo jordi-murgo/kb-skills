@@ -85,6 +85,38 @@ URLs, every custom field. Keep it out of the repo:
 .cache/
 ```
 
+### `.vault-meta/`: derived state, tracked policy
+
+Create this directory before any skill builds an index, mirror, scan state, or
+report. It is an entirely disposable local cache, but its **ignore policy** must
+travel with the vault:
+
+```bash
+mkdir -p .vault-meta
+cat > .vault-meta/.gitignore <<'EOF'
+# Derived vault state is local and may be deleted at any time.
+# Keep only this sentinel tracked; ignore caches, indexes, mirrors, logs and PID files.
+*
+!.gitignore
+EOF
+```
+
+Do **not** ignore `.vault-meta/` outright in the root `.gitignore`: Git then
+will not descend into the directory, so it cannot track the sentinel. If an
+older vault has that rule, replace it with:
+
+```gitignore
+.vault-meta/*
+!.vault-meta/.gitignore
+```
+
+Prove both halves before committing:
+
+```bash
+git check-ignore -q --no-index .vault-meta/index.db
+! git check-ignore -q --no-index .vault-meta/.gitignore
+```
+
 ## 3. Naming
 
 | Prefix | Origin |
@@ -225,12 +257,11 @@ touched. To work against a different site, `cd` to that project and its
 the flat REST API import is sufficient. TWG is a discovery tool, not a
 pipeline — it does not write to `.raw/` or `wiki/`.
 
-## 6. `kb-config.yaml` — creating and maintaining it
+## 6. `kb-config.yaml` — current supported contract
 
 One file at the vault root configures every pipeline. **No project-specific
-value belongs in skill code**: if you find yourself editing a script to change a
-URL, a project key, or an output directory, that value is missing from the
-config.
+value belongs in skill code**: if you need to change a URL, project key, model,
+endpoint, source directory, or output path, it belongs here.
 
 ### Creating one
 
@@ -238,70 +269,142 @@ config.
 cp <kb-skills>/kb-config.example.yaml kb-config.yaml
 ```
 
-Then fill the sections you actually use and leave the rest with `enabled: false`.
-A disabled pipeline is inert — its skill reports that it is off and stops,
-rather than half-running.
+The canonical top-level sections are:
+
+| Section | Consumer | Required when |
+|---|---|---|
+| `project` | M365 fetchers | Running Graph fetch; `name` is required |
+| `jira` | `kb-jira-sync` | Importing Jira |
+| `wiki_publish` | generic `kb-publish` deployer | Publishing with `deploy-wiki.py` |
+| `m365` | `kb-m365-fetch` | Fetching M365 data |
+| `embeddings` | `wiki-semsearch` | Optional; defaults are local |
+| `code_search` | `code-search` | Opcional; índice independiente de código |
+| `decisions` | `wiki-vetting` | Optional; defaults are local |
+| `repos` | `wiki-git-ingest` | Watching repositories |
+
+Use this shape; omit optional sections rather than inventing alternative keys:
 
 ```yaml
 project:
   name: myproject
-  keywords: [myproject, the terms that identify it in mail and chat]
+  keywords: [myproject, add project terms]
 
 jira:
-  enabled: true
+  enabled: false
   base_url: https://yourorg.atlassian.net
-  project_key: PROJ
+  project_key: YOUR_PROJECT_KEY
   output_dir: .raw/jira
+
+wiki_publish:
+  enabled: false
+  target: github # github or gitlab
+  repo: git@github.com:owner/project.wiki.git
+  branch: main
+  vpn_required: false
+  vpn_host: github.com
+  vpn_private_prefix: "10."
+
+m365:
+  enabled: false
+  modules:
+    emails: true
+    chats: true
+    teams_channels: true
+    attachments: true
+    chat_attachments: true
+    transcripts: false
+    sharepoint: false
+  sharepoint:
+    site_host: ""
+    site_path: ""
+    folder_path: ""
+    max_depth: 3
+  output:
+    dir: .raw/msoffice
+    attachments_dir: .raw/msoffice/attachments
+    chat_attachments_dir: .raw/msoffice/chat-attachments
+    transcripts_dir: .raw/msoffice/transcripts
+    sharepoint_dir: .raw/sharepoint
+  window:
+    hours: 24
+    top: 100
+    chat_limit: 50
+
+embeddings:
+  model: ${WIKI_SEM_MODEL:-bge-m3}
+  endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
+  db: .vault-meta/sem/index.db
+  source_dirs:
+    - wiki
+
+code_search:
+  source_dirs:
+    - projects
+
+decisions:
+  model: ${WIKI_VET_MODEL:-clef-flash:9b}
+  endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
+
+repos: {}
 ```
 
-### Four rules
+`embeddings.source_dirs` is a non-empty list of vault-relative directories.
+It defaults to `[wiki]`; add `.` only to explicitly index the vault root.
+Git-ignored Markdown is excluded and a missing configured directory makes
+`wiki-semsearch build` fail.
+
+`code_search` indexa código y configuración, no Markdown por defecto. Admite
+`source_dirs`, `extensions`, `model` y `endpoint`; modelo y endpoint heredan
+`embeddings` si se omiten. Todos sus datos van a `.vault-meta/code-search/`.
+Respeta las reglas Git de cada submódulo. Instala el skill completo y ejecuta
+`python3 .agents/skills/code-search/scripts/code-search.py doctor --json`;
+si faltan dependencias, pregunta al usuario antes de instalarlas. No descarga
+modelos ni inicia servicios por su cuenta.
+
+### Rules and defaults
 
 1. **Paths are relative to the vault root.** Absolute paths, `~`, and `..`
-   traversal are rejected, and the check runs before any network call. This is
-   enforced because the runtimes disagree: `Path("/vault") / "/etc/passwd"`
-   yields `/etc/passwd` in Python, while PowerShell's `Join-Path` yields
-   `/vault/etc/passwd`. Unenforced, one file would mean two things.
+   traversal are rejected before network or filesystem writes.
 2. **No credentials, ever.** Jira reads `ATLASIAN_EMAIL` and `ATLASIAN_API_KEY`
-   from the environment or `.env.local`. The config is committed; those are not.
-3. **`enabled` is the on switch.** Every pipeline section has one, defaulting to
-   false in the template.
-4. **Missing keys stop the run.** Scripts name the key they need rather than
-   guessing a default.
+   from the environment or `.env.local`; macros such as `${WIKI_OLLAMA_URL}`
+   receive values from the process, `.env`, then `.env.local`.
+3. **`enabled` only applies to pipeline sections** — `jira`, `wiki_publish`,
+   and `m365`. `embeddings`, `code_search`, `decisions`, and `repos` are optional
+   sections without an `enabled` switch.
+4. **Defaults are consumer-specific.** Omit an optional section to use its
+   documented defaults; when an enabled pipeline needs a value, its script
+   stops and names the missing key instead of guessing.
 
-### Formats
+### GitLab publisher compatibility
 
-Resolution order: `kb-config.yaml` → `kb-config.yml` → `kb-config.json`, and for
-`kb-m365-fetch` a legacy flat `m365-config.json` last. A project can sit on JSON
-indefinitely; YAML is preferred only because it carries real comments.
+`wiki_publish` is the canonical publishing key. Existing vaults that run the
+older `deploy-gitlab-wiki.py` or `push.sh` still require a separate
+`gitlab_wiki` section with `enabled`, `target`, `repo`, `branch`,
+`vpn_required`, `vpn_host`, and `vpn_private_prefix`. It is not an alias for
+`wiki_publish`; do not rename an existing GitLab deployment's key until those
+scripts are reconciled.
 
-YAML needs a parser neither runtime ships with. Python raises an error naming the
-install command; `graph-fetch.ps1` installs `powershell-yaml` on demand, the way
-it already installs the Microsoft.Graph modules.
+### Formats and validation
 
-### Maintaining it
+Resolution order: `kb-config.yaml` → `kb-config.yml` → `kb-config.json`; M365
+also has a separate legacy flat `m365-config.json` fallback. YAML needs PyYAML;
+the Python scripts print the installation command if it is absent.
 
-Adding a value to a pipeline means three edits, not one: the script that reads
-it, `kb-config.example.yaml`, and the section table above. A key that exists in
-one project's config and nowhere in the template is a key the next project will
-never discover.
-
-Validate after editing — YAML fails at the first wrong indent, and a config that
-parses can still be wrong:
+Adding a supported key means updating its reader, `kb-config.example.yaml`, and
+this schema. Do not copy obsolete flat M365 keys such as `m365.output_dir`:
+the Graph reader consumes the nested `m365.output.*` mapping shown above.
 
 ```bash
-python3 -c "import yaml;print(yaml.safe_load(open('kb-config.yaml')).keys())"
-python3 <skill>/scripts/<script>.py --dry-run   # where the script offers one
+python3 -c "import yaml; print(yaml.safe_load(open('kb-config.yaml')).keys())"
+python3 .agents/skills/wiki-semsearch/scripts/wiki-semsearch.py status
 ```
-
-Common failures and what they mean:
 
 | Message | Cause |
 |---|---|
-| `has no '<section>' section` | section missing or misindented at top level |
-| `must be relative to the vault root` | absolute path or `~` in a path value |
-| `escapes the vault root` | `..` traversal in a path value |
-| `<section>.enabled is false` | pipeline off, not broken |
-| `is missing: <key>` | required key absent |
+| `must be relative to the vault root` | Absolute path, `~`, or `..` in a path value |
+| `configured source directory not found` | A `source_dirs` entry does not exist |
+| `<section>.enabled is false` | Pipeline is off, not broken |
+| `is missing: <key>` | Required value for an enabled pipeline is absent |
 
 ## 7. Verification checklist
 

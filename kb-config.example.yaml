@@ -94,6 +94,20 @@ embeddings:
   endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
   # Index location (relative to vault root). Derived cache: deletable anytime.
   db: .vault-meta/sem/index.db
+  # Markdown source directories, relative to the vault root. Default: [wiki].
+  # Git ignore rules apply. Add "." only to explicitly include the vault root.
+  source_dirs:
+    - wiki
+
+code_search:
+  # Índice de código independiente, almacenado en .vault-meta/code-search/.
+  # Hereda embeddings.model/endpoint; source_dirs NO se hereda de embeddings.
+  source_dirs:
+    - projects
+  # Opcionales: sustituir extensiones o modelo/endpoint para este índice.
+  # extensions: [.java, .py, .ts, .xml, .yaml, .json, .toml, .sh]
+  # model: bge-m3
+  # endpoint: ${WIKI_OLLAMA_URL}
 
 decisions:
   # wiki-vetting System One server (base URL; /v1/systemone is appended).

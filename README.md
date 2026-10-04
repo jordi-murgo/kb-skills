@@ -20,6 +20,8 @@ kb-skills/
 ├── wiki-query/  wiki-fold/  wiki-issues/
 ├── wiki-semsearch/          ← hybrid BM25+vector vault search
 │   └── scripts/
+├── code-search/             ← self-contained lexical/vector source search
+│   └── scripts/             ← code-search.py; data in .vault-meta/code-search/
 ├── wiki-vetting/            ← claim vetting (System One) + lifecycle audit
 │   └── scripts/
 ├── wiki-sync/               ← stale file-linked claims vs git history
@@ -27,6 +29,10 @@ kb-skills/
 ├── wiki-git-ingest/         ← upstream changelogs/releases → claims
 │   └── scripts/
 ├── wiki-relations/          ← typed page graph + relation lint
+│   └── scripts/
+├── ego-browser-research/   ← browser-rendered and session-bound source evidence
+│   └── scripts/
+├── vampirize/               ← evidence, project-fit and licence-gated reuse review
 │   └── scripts/
 ├── save/  doc-pipeline/  autoresearch/
 ├── kb-setup/                ← wire a project's KB plumbing
@@ -68,6 +74,7 @@ Nothing project-specific belongs in skill code. Copy `kb-config.example.yaml` to
 | `jira` | `kb-jira-sync` — base URL, project key, output dir |
 | `wiki_publish` | `kb-publish` — wiki repo, branch, VPN precondition |
 | `m365` | `kb-m365-fetch` — modules, output paths, time window |
+| `code_search` | `code-search` — source directories/extensions; inherits embeddings model/endpoint unless overridden; cache in `.vault-meta/code-search/` |
 
 Credentials never live in this file. Jira reads `ATLASIAN_EMAIL` and
 `ATLASIAN_API_KEY` from the environment or `.env.local`.

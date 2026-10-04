@@ -2,7 +2,8 @@
 """wiki_semsearch.py — local hybrid (BM25 + vector + RRF) search over the wiki vault.
 
 Subcommands:
-  build          index wiki/**/*.md into .vault-meta/sem/index.db (incremental)
+  build          index configured Markdown source directories into .vault-meta/sem/index.db
+                 (incremental)
   query TEXT     search the index; --mode hybrid|bm25|vector, --top N, --json
   status         index stats and stale pages
 
@@ -10,11 +11,11 @@ Fully local: BM25 via sqlite FTS5 (own inverted-index fallback when FTS5 is
 unavailable), embeddings via the local Ollama /api/embed endpoint.
 
 Config: the `embeddings` section of kb-config.yaml at the vault root (model,
-endpoint base URL with /api/embed appended, db path relative to the root).
-Values support ${VAR} / ${VAR:-default} macros expanded from the environment
-(process env, then vault-root .env / .env.local). Without config everything
-targets a local Ollama on 127.0.0.1:11434. WIKI_SEM_NO_FTS5=1 forces the
-fallback inverted index.
+endpoint base URL with /api/embed appended, db path relative to the root, and
+`source_dirs` relative to the root). Values support ${VAR} / ${VAR:-default}
+macros expanded from the environment (process env, then vault-root .env /
+.env.local). Without config everything targets a local Ollama on 127.0.0.1:11434
+and indexes `wiki/`. WIKI_SEM_NO_FTS5=1 forces the fallback inverted index.
 """
 
 import argparse
@@ -25,6 +26,7 @@ import os
 import re
 import sqlite3
 import struct
+import subprocess
 import sys
 import time
 import urllib.error
@@ -79,12 +81,15 @@ MACRO_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 
 def expand_macros(value):
-    """Expand ${VAR} / ${VAR:-default} in strings (unset or empty -> default,
-    else ""). Non-strings pass through unchanged."""
+    """Expand ${VAR} / ${VAR:-default} recursively in config values."""
     if isinstance(value, str):
         return MACRO_RE.sub(
             lambda m: os.environ.get(m.group(1)) or (m.group(2) or ""), value
         )
+    if isinstance(value, list):
+        return [expand_macros(item) for item in value]
+    if isinstance(value, dict):
+        return {key: expand_macros(item) for key, item in value.items()}
     return value
 
 
@@ -131,10 +136,96 @@ def vault_path(root: Path, rel: str, key: str) -> Path:
     return root / rel
 
 
+def source_directories(root: Path, config: dict) -> tuple[Path, ...]:
+    """Return configured Markdown source directories, defaulting to `wiki/`."""
+    raw_dirs = config.get("source_dirs", ["wiki"])
+    if not isinstance(raw_dirs, list) or not raw_dirs:
+        raise SystemExit(
+            "kb-config embeddings.source_dirs must be a non-empty list of "
+            "relative directories"
+        )
+    directories = []
+    seen = set()
+    for value in raw_dirs:
+        if not isinstance(value, str) or not value:
+            raise SystemExit(
+                "kb-config embeddings.source_dirs entries must be non-empty "
+                "relative directory strings"
+            )
+        directory = vault_path(root, value, "embeddings.source_dirs")
+        relpath = directory.relative_to(root).as_posix()
+        if relpath not in seen:
+            directories.append(directory)
+            seen.add(relpath)
+    return tuple(directories)
+
+
+def configured_source_dirs() -> list[str]:
+    return [directory.relative_to(VAULT_ROOT).as_posix() for directory in SOURCE_DIRS]
+
+
+def gitignored_paths(relpaths) -> set[str]:
+    """Return paths excluded by the vault's Git ignore rules in one git call."""
+    relpaths = list(relpaths)
+    if not relpaths:
+        return set()
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(VAULT_ROOT),
+                "check-ignore",
+                "--no-index",
+                "--stdin",
+                "-z",
+            ],
+            input=("\0".join(relpaths) + "\0").encode("utf-8"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except FileNotFoundError:
+        raise SystemExit(
+            "error: git is required to honor .gitignore while collecting source files"
+        )
+    if result.returncode not in (0, 1):
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise SystemExit(
+            f"error: unable to apply Git ignore rules at {VAULT_ROOT}: {detail}"
+        )
+    return {
+        path
+        for path in result.stdout.decode("utf-8", errors="surrogateescape").split("\0")
+        if path
+    }
+
+
+def source_files() -> dict[str, Path]:
+    """Collect configured Markdown files, excluding Git metadata and ignored paths."""
+    candidates = {}
+    for directory in SOURCE_DIRS:
+        if not directory.is_dir():
+            continue
+        for path in directory.rglob("*.md"):
+            if not path.is_file():
+                continue
+            relpath = path.relative_to(VAULT_ROOT)
+            if ".git" in relpath.parts:
+                continue
+            candidates[relpath.as_posix()] = path
+    ignored = gitignored_paths(candidates)
+    return {
+        relpath: candidates[relpath]
+        for relpath in sorted(candidates)
+        if relpath not in ignored
+    }
+
+
 VAULT_ROOT = find_vault_root()
 load_env_files(VAULT_ROOT)
 _CFG = load_config_section(VAULT_ROOT, "embeddings")
-WIKI_DIR = VAULT_ROOT / "wiki"
+SOURCE_DIRS = source_directories(VAULT_ROOT, _CFG)
 _db = _CFG.get("db")
 DEFAULT_DB = vault_path(VAULT_ROOT, _db, "embeddings.db") if _db else VAULT_ROOT / ".vault-meta" / "sem" / "index.db"
 DEFAULT_MODEL = _CFG.get("model") or "bge-m3"
@@ -463,9 +554,14 @@ def snippet(text, width=240):
 
 
 def cmd_build(args):
-    if not WIKI_DIR.is_dir():
-        print(f"error: wiki directory not found: {WIKI_DIR}", file=sys.stderr)
+    missing_dirs = [directory for directory in SOURCE_DIRS if not directory.is_dir()]
+    if missing_dirs:
+        missing = ", ".join(
+            directory.relative_to(VAULT_ROOT).as_posix() for directory in missing_dirs
+        )
+        print(f"error: configured source directory not found: {missing}", file=sys.stderr)
         return 1
+    current = source_files()
     conn = connect_writable()
     t0 = time.perf_counter()
     ensure_schema(conn)
@@ -477,8 +573,6 @@ def cmd_build(args):
     if backend == "own":
         ensure_own_tables(conn)
 
-    files = sorted(p for p in WIKI_DIR.rglob("*.md") if p.is_file())
-    current = {p.relative_to(VAULT_ROOT).as_posix(): p for p in files}
     known = {
         path: (mtime, sha)
         for path, mtime, sha in conn.execute("SELECT path, mtime, sha256 FROM pages")
@@ -574,6 +668,7 @@ def cmd_build(args):
         "removed": stats["removed"],
         "embedded": embedded,
         "embed_failures": embed_failures,
+        "source_dirs": configured_source_dirs(),
         "model": args.model,
         "bm25_backend": backend,
         "build_seconds": round(elapsed, 2),
@@ -591,6 +686,7 @@ def cmd_build(args):
             f" [model {args.model}, backend {backend}] in {elapsed:.2f}s"
         )
         print(f"db: {DB_PATH} ({db_mb:.2f} MB)")
+        print(f"sources: {', '.join(configured_source_dirs())}")
     return 0
 
 
@@ -728,9 +824,7 @@ def cmd_status(args):
         path: (mtime, sha)
         for path, mtime, sha in conn.execute("SELECT path, mtime, sha256 FROM pages")
     }
-    current = {
-        p.relative_to(VAULT_ROOT).as_posix(): p for p in WIKI_DIR.rglob("*.md") if p.is_file()
-    } if WIKI_DIR.is_dir() else {}
+    current = source_files()
     for relpath, (mtime, sha) in sorted(known.items()):
         f = current.get(relpath)
         if f is None:
@@ -749,6 +843,7 @@ def cmd_status(args):
         "model": model,
         "dims": dims,
         "bm25_backend": backend,
+        "source_dirs": configured_source_dirs(),
         "last_build": built_at,
         "stale": stale,
         "stale_count": len(stale),
@@ -764,6 +859,7 @@ def cmd_status(args):
         print(f"last build: {built_at}  model: {model}  dims: {dims}  backend: {backend}")
         print(f"pages: {n_pages}  chunks: {n_chunks}  embedded: {n_embedded}")
         print(f"stale: {len(stale)}  new: {len(new_pages)}")
+        print(f"sources: {', '.join(configured_source_dirs())}")
         for s in stale:
             print(f"  stale: {s['page']} ({s['reason']})")
         for p in new_pages:
@@ -779,14 +875,14 @@ def parse_args(argv):
         prog="wiki_semsearch.py",
         description="Local hybrid (BM25 + vector + RRF) search over the wiki vault.",
         epilog=(
-            "config: kb-config.yaml `embeddings` section (model / endpoint base"
-            " URL / db path), ${VAR} macros expand from env incl. .env/.env.local;"
+            "config: kb-config.yaml `embeddings` section (model / endpoint base URL /"
+            " db path / source_dirs), ${VAR} macros expand from env incl. .env/.env.local;"
             " default http://127.0.0.1:11434. WIKI_SEM_NO_FTS5=1 forces the fallback inverted index"
         ),
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    b = sub.add_parser("build", help="index wiki/**/*.md (incremental)")
+    b = sub.add_parser("build", help="index configured Markdown sources (incremental)")
     b.add_argument("--model", default=DEFAULT_MODEL, help="embedding model (default %(default)s)")
     b.add_argument("--json", action="store_true", help="JSON build report")
 

@@ -1,0 +1,4 @@
+# Derived vault state is local and may be deleted at any time.
+# Keep only this sentinel tracked; ignore caches, indexes, mirrors, logs and PID files.
+*
+!.gitignore
