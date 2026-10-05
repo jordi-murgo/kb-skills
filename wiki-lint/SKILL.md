@@ -2,9 +2,10 @@
 name: wiki-lint
 description: >
   Health check the wiki vault. Finds orphan pages, dead wikilinks, stale claims,
-  missing cross-references, frontmatter gaps, and empty sections. Creates or updates
-  Dataview dashboards. Triggers on: "lint", "health check",
-  "clean up wiki", "check the wiki", "wiki maintenance", "find orphans", "wiki audit".
+  missing cross-references, frontmatter gaps, dangling typed relations, and
+  empty sections. Creates or updates Dataview dashboards. Triggers on: "lint",
+  "health check", "clean up wiki", "check the wiki", "wiki maintenance",
+  "find orphans", "wiki audit".
 ---
 
 # wiki-lint: Wiki Health Check
@@ -54,6 +55,7 @@ Work through these in order:
 10. **Semantic tiling** (DragonScale Mechanism 3, opt-in). Flag candidate duplicate pages (across all scanned types, not just concepts) via embedding cosine similarity. See the **Semantic Tiling** section below.
 11. **Title overlap** (lightweight duplicate pre-filter). Pages whose filename tokens overlap above a Jaccard threshold (`scripts/lint-title-overlap.py`). See the **Title Overlap** section below.
 12. **Bilingual terminology checks** (opt-in). Deterministic and judgment-based checks on DNT-classified pages. See the **Bilingual Terminology Checks** section below.
+13. **Typed relations** (deterministic). Dangling relation targets, unknown relation types, and self-relations in `relations:` frontmatter (`scripts/lint-relations.py`, aggregated into `run-lint.py`). The same script answers graph queries outside the gate: `graph [PAGE]` for adjacency, `reverse PAGE` for typed backlinks.
 
 ---
 
