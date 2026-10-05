@@ -12,12 +12,13 @@ Skills live at the repository root, one directory each:
 
 ```
 kb-skills/
-├── kb-config.example.json   ← per-project config template
+├── kb-config.example.yaml   ← per-project config template, self-documented
+├── .env.example             ← credential/env-template for config macros
 ├── wiki/                    ← vault scaffolding + routing
 ├── wiki-ingest/             ← add a source to the vault
 ├── wiki-lint/               ← health check + deterministic gates
-│   └── scripts/             ← run-lint.py + the four lint-*.py checks
-├── wiki-query/  wiki-fold/  wiki-issues/
+│   └── scripts/             ← run-lint.py + the five lint-*.py checks
+├── wiki-query/  wiki-fold/  wiki-issues/  wiki-markdown/
 ├── wiki-semsearch/          ← hybrid BM25+vector vault search
 │   └── scripts/
 ├── code-search/             ← self-contained lexical/vector source search
@@ -28,13 +29,11 @@ kb-skills/
 │   └── scripts/
 ├── wiki-git-ingest/         ← upstream changelogs/releases → claims
 │   └── scripts/
-├── wiki-relations/          ← typed page graph + relation lint
-│   └── scripts/
-├── ego-browser-research/   ← browser-rendered and session-bound source evidence
+├── ego-browser-research/    ← browser-rendered and session-bound source evidence
 │   └── scripts/
 ├── vampirize/               ← evidence, project-fit and licence-gated reuse review
 │   └── scripts/
-├── save/  doc-pipeline/  autoresearch/
+├── save/  doc-pipeline/  autoresearch/  research-brief/
 ├── kb-setup/                ← wire a project's KB plumbing
 ├── kb-publish/              ← publish the vault to a GitLab Wiki
 │   └── scripts/
@@ -63,18 +62,62 @@ for l in .claude/skills/*; do [ -f "$l/SKILL.md" ] || echo "BROKEN: $l"; done
 
 See `kb-setup/SKILL.md` for the full wiring procedure and its failure modes.
 
+## Updating a vault from this upstream
+
+`kb-skills` is canonical. Before synchronising, separate project adaptations
+from improvements that every vault should receive: move the latter here first.
+Then replace only the selected base skills. Replacing a skill directory, rather
+than overlaying it, removes upstream files that no longer belong to the skill.
+
+Do not apply the replacement loop to a vault with project-specific edits inside
+a base skill. Review its diff first and preserve or upstream those edits. Leave
+project-owned skills outside this selection untouched.
+
+```bash
+# Run from the kb-skills checkout. Set VAULT to the target vault root.
+export VAULT=/path/to/project-kb
+
+for entry in */SKILL.md; do
+  skill=${entry%/SKILL.md}
+  rm -rf "$VAULT/.agents/skills/$skill"
+  cp -R "$skill" "$VAULT/.agents/skills/$skill"
+done
+```
+
+The loop only replaces the base skill names present in this checkout.
+
+Prove the copied skills match, then run the affected skill's smoke command from
+the vault root:
+
+```bash
+for entry in */SKILL.md; do
+  skill=${entry%/SKILL.md}
+  diff -rq "$skill" "$VAULT/.agents/skills/$skill" || exit 1
+done
+
+(cd "$VAULT" && python3 .agents/skills/code-search/scripts/code-search.py doctor --json)
+```
+
+Commit the synchronization separately from vault content changes. This keeps
+the upstream version and local adaptations reviewable.
+
+
 ## Configuration
 
-Nothing project-specific belongs in skill code. Copy `kb-config.example.yaml` to
-`kb-config.yaml` at the vault root and fill it in:
+Nothing project-specific belongs in skill code. The complete reference is
+[`kb-config.example.yaml`](kb-config.example.yaml) — every section and key is
+self-documented there, including which skill consumes it. Copy it to
+`kb-config.yaml` at the vault root and fill it in; the sections it covers:
 
 | Section | Drives |
 |---|---|
 | `project` | name and keywords used to match project content |
+| `embeddings` | `wiki-semsearch` and `code-search` — model, endpoint, semantic source directories, and derived index location |
+| `code_search` | `code-search` — code source directories/extensions; inherits embeddings model/endpoint unless overridden; cache in `.vault-meta/code-search/` |
+| `repos` | `wiki-git-ingest` — native Git remote URLs or an existing local clone |
 | `jira` | `kb-jira-sync` — base URL, project key, output dir |
 | `wiki_publish` | `kb-publish` — wiki repo, branch, VPN precondition |
 | `m365` | `kb-m365-fetch` — modules, output paths, time window |
-| `code_search` | `code-search` — source directories/extensions; inherits embeddings model/endpoint unless overridden; cache in `.vault-meta/code-search/` |
 
 Credentials never live in this file. Jira reads `ATLASIAN_EMAIL` and
 `ATLASIAN_API_KEY` from the environment or `.env.local`.
@@ -87,8 +130,8 @@ PowerShell's `Join-Path` yields `/vault/etc/passwd`. The same config file would
 otherwise mean two different things depending on which pipeline read it. The
 check runs before any network call.
 
-Each pipeline section has an `enabled` flag and refuses to run when it is false
-or when a required key is missing, naming the key.
+Pipelines with an `enabled` flag refuse to run when it is false. Every script
+names a missing required configuration key before doing work.
 
 ### Formats
 
@@ -108,6 +151,40 @@ through `.PSObject.Properties`, which on a `Hashtable` yields `Count`, `Keys`
 and `Values` instead of the config keys — quietly collapsing the module set. The
 YAML result is round-tripped through JSON so both formats produce the same
 shape.
+
+### Derived state
+
+Indexes, remote mirrors, scan reports and process state live in `.vault-meta/`.
+They are disposable and must not be committed; the directory's `.gitignore`
+sentinel is the one exception, so every clone gets the same policy:
+
+```gitignore
+# Root .gitignore
+.vault-meta/*
+!.vault-meta/.gitignore
+```
+
+```gitignore
+# .vault-meta/.gitignore
+*
+!.gitignore
+```
+
+See `kb-setup/SKILL.md` for the creation and verification commands.
+
+## Research and reuse
+
+Use the skill that matches the evidence and decision needed:
+
+| Need | Skill | Boundary |
+|---|---|---|
+| Search configured source trees by text or embedding similarity | `code-search` | `doctor` before build/query; code lives in `.vault-meta/code-search/` |
+| Capture rendered public pages or research a logged-in browser session | `ego-browser-research` | Ego Browser only; explicit user handoff for authentication |
+| Decide whether an external repository, post, article or product is reusable | `vampirize` | Independent source, project-fit and rights analyses; no upstream code in reports |
+
+`vampirize` may recommend a clean-room algorithm reimplementation. It does not
+permit copying code, tests, identifiers, prose or assets without a passing
+licence gate and the required notices.
 
 ## Two traps worth knowing
 

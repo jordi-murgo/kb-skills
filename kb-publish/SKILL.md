@@ -1,9 +1,8 @@
 ---
 name: kb-publish
 description: >
-  Publish the wiki vault to a GitHub or GitLab Wiki. Wraps
-  .agents/skills/kb-publish/scripts/deploy-wiki.py and .agents/skills/kb-publish/scripts/push.sh, which convert the vault's
-  nested wiki structure into Gollum-compatible pages and push them.
+  Publish the wiki vault to a GitHub or GitLab Wiki: convert the vault's nested
+  structure into Gollum-compatible pages and push them.
   Triggers on: "publish the wiki", "deploy the wiki", "push to github wiki",
   "push to gitlab", "/kb-publish".
 allowed-tools: Read Bash Grep Glob

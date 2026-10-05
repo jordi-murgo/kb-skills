@@ -2,10 +2,10 @@
 name: kb-m365-fetch
 description: >
   Pull Microsoft 365 project context into .raw/ — Outlook mail, Teams chats and
-  channels, attachments, SharePoint — via .agents/skills/kb-m365-fetch/scripts/graph-fetch.ps1 (deterministic,
-  Graph API) with .agents/skills/kb-m365-fetch/scripts/m365-copilot.py as the fallback when a scope is blocked
-  by tenant admin consent. Triggers on: "fetch emails", "pull teams chats",
-  "sync m365", "graph fetch", "/kb-m365-fetch".
+  channels, attachments, SharePoint — via deterministic Graph API scripts with an
+  LLM fallback when a scope is blocked by tenant admin consent.
+  Triggers on: "fetch emails", "pull teams chats", "sync m365",
+  "graph fetch", "/kb-m365-fetch".
 allowed-tools: Read Bash Grep Glob
 ---
 

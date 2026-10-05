@@ -1,6 +1,6 @@
 ---
 name: doc-pipeline
-description: "Convert source documents (.doc/.docx/.pdf/.pptx/.pptm/.xlsx/.html/...) into ingest-ready Markdown for the wiki vault. Stage 1 runs a deterministic raw conversion (markit + a pandoc reference). Stage 2 is a quality-control pass that annotates conversion fidelity, language, clarity, redundancy, verbosity, currency, links, source references, footnotes, tables, and Mermaid-diagram opportunities as inline <!-- REVIEW --> comments WITHOUT changing the content. Stage 3 is a human approval gate. Stage 4 strips annotations into a clean file the wiki-ingest skill can read. Checkworthy facts are only flagged; web fact-checking runs on explicit request. Triggers on: convert to markdown, doc pipeline, konvertiere für ingest, QC dieses Dokument, ingest-fertig machen, prepare documents for ingest, or when source documents are dropped into a pre-convert folder."
+description: "Convert source documents (.doc/.docx/.pdf/.pptx/.pptm/.xlsx/.html/...) into ingest-ready Markdown for the wiki vault: raw conversion, quality-control annotations, human approval gate, then a clean file for wiki-ingest. Pre-ingest conversion only — it never files pages into the wiki. Checkworthy facts are flagged, never auto-verified. Triggers on: convert to markdown, doc pipeline, konvertiere für ingest, QC dieses Dokument, ingest-fertig machen."
 ---
 
 # doc-pipeline: Documents → Ingest-ready Markdown

@@ -1,18 +1,13 @@
 ---
 name: research-brief
 description: >
-  Construct or audit a structured research brief for the
-  agentic-knowledge-management:autoresearch skill, enforcing twelve conventions
-  (W1-W12) that prevent the most common failure modes of LLM-generated briefs:
-  source anchoring on stale training data, unverified numbers,
-  confirmation-biased objectives, binary stopping conditions,
-  research-loop-as-decision-maker, bilingual evidence asymmetry, quantity-over-quality
-  source quotas, missing scout phase, uniform cost ceilings, no output exemplar,
-  direct wiki write without review gate, and unchallenged framing.
+  Construct or audit a structured research brief that the autoresearch skill
+  requires before starting a loop: briefs carry brief_version: 1 and enforce
+  twelve conventions (W1-W12) against LLM-generated brief failure modes.
   Triggers on: "schreib Brief", "write a research brief", "Brief erstellen",
   "/brief <task-id>", "audit this brief", "validate brief",
-  or when the autoresearch skill encounters a queue task whose brief is missing,
-  is "_to brief_", or carries brief_version < 1.
+  or when a queue task's brief is missing, is "_to brief_", or carries
+  brief_version < 1.
 allowed-tools: Read Write Edit Glob Grep Bash
 ---
 

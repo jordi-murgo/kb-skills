@@ -1,6 +1,6 @@
 ---
 name: code-search
-description: "Trigger: buscar código, localizar implementación, indexar proyectos, code search. Consulta léxica/vectorial local con rutas y líneas."
+description: "Trigger: buscar código, localizar implementación, indexar proyectos, code search, where is this implemented, find the code. Consulta léxica/vectorial local sobre proyectos de código fuente; devuelve rutas y líneas. Para buscar páginas Markdown del wiki usa wiki-semsearch."
 license: Apache-2.0
 metadata:
   author: kb-skills
