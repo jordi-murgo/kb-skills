@@ -109,7 +109,7 @@ Route to the correct operation based on what the user says:
 |-----------|-----------|-----------|
 | "scaffold", "set up vault", "create wiki" | SCAFFOLD | this skill |
 | "ingest [source]", "process this", "add this" | INGEST | `wiki-ingest` |
-| "what do you know about X", "query:" | QUERY | `wiki-query` |
+| "what do you know about X", "query:" | QUERY | `wiki-search` |
 | "lint", "health check", "clean up" | LINT | `wiki-lint` |
 | "save this", "file this", "/save" | SAVE | `save` |
 | "/autoresearch [topic]", "research [topic]" | AUTORESEARCH | `autoresearch` |

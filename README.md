@@ -18,9 +18,9 @@ kb-skills/
 ├── wiki-ingest/             ← add a source to the vault
 ├── wiki-lint/               ← health check + deterministic gates
 │   └── scripts/             ← run-lint.py + the five lint-*.py checks
-├── wiki-query/  wiki-fold/  wiki-issues/  wiki-markdown/
-├── wiki-semsearch/          ← hybrid BM25+vector vault search
-│   └── scripts/
+├── wiki-fold/  wiki-issues/  wiki-markdown/
+├── wiki-search/             ← wiki Q&A + hybrid BM25+vector vault search
+│   └── scripts/             ← wiki-search.py; data in .vault-meta/wiki-search/
 ├── code-search/             ← self-contained lexical/vector source search
 │   └── scripts/             ← code-search.py; data in .vault-meta/code-search/
 ├── wiki-vetting/            ← claim vetting (System One) + lifecycle audit
@@ -91,11 +91,12 @@ the vault root:
 
 ```bash
 for entry in */SKILL.md; do
-  skill=${entry%/SKILL.md}
+  skill="${entry%/SKILL.md}"
   diff -rq "$skill" "$VAULT/.agents/skills/$skill" || exit 1
 done
 
 (cd "$VAULT" && python3 .agents/skills/code-search/scripts/code-search.py doctor --json)
+(cd "$VAULT" && python3 .agents/skills/wiki-search/scripts/wiki-search.py status)
 ```
 
 Commit the synchronization separately from vault content changes. This keeps
@@ -130,7 +131,7 @@ self-documented there, including which skill consumes it. Copy it to
 | Section | Drives |
 |---|---|
 | `project` | name and keywords used to match project content |
-| `embeddings` | `wiki-semsearch` and `code-search` — model, endpoint, semantic source directories, and derived index location |
+| `embeddings` | `wiki-search` and `code-search` — model, endpoint, semantic source directories, and derived index location |
 | `code_search` | `code-search` — code source directories/extensions; inherits embeddings model/endpoint unless overridden; cache in `.vault-meta/code-search/` |
 | `repos` | `wiki-git-ingest` — native Git remote URLs or an existing local clone |
 | `jira` | `kb-jira-sync` — base URL, project key, output dir |
@@ -235,7 +236,7 @@ second brain, based on Karpathy's LLMWiki pattern.
 | `wiki` | `wiki/` | Scaffold, architecture, routing — Obsidian references removed |
 | `wiki-ingest` | `wiki-ingest/` | Source ingestion — Obsidian references removed |
 | `wiki-lint` | `wiki-lint/` | Health checks, deterministic gates |
-| `wiki-query` | `wiki-query/` | Hot cache → index → pages query |
+| `wiki-query` | `wiki-search/` | Hot cache → index → pages query; merged with former wiki-semsearch engine |
 | `wiki-fold` | `wiki-fold/` | Log entry rollups |
 | `wiki-issues` | `wiki-issues/` | Open-issues stack |
 | `save` | `save/` | Save conversation/insight to vault |

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression coverage for configured wiki-semsearch source directories."""
+"""Regression coverage for configured wiki-search source directories."""
 
 import contextlib
 import importlib.util
@@ -15,12 +15,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "wiki-semsearch.py"
+SCRIPT = Path(__file__).parents[1] / "scripts" / "wiki-search.py"
 
 
-def load_semsearch(root: Path):
+def load_search(root: Path):
     """Load the script after making the temporary vault its cwd."""
-    module_name = f"wiki_semsearch_test_{uuid.uuid4().hex}"
+    module_name = f"wiki_search_test_{uuid.uuid4().hex}"
     spec = importlib.util.spec_from_file_location(module_name, SCRIPT)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
@@ -59,7 +59,7 @@ class SourceDirectoriesTest(unittest.TestCase):
         self.tempdir.cleanup()
 
     def write_config(self, source_dirs=None):
-        lines = ["embeddings:", "  db: .vault-meta/sem/index.db"]
+        lines = ["embeddings:", "  db: .vault-meta/wiki-search/index.db"]
         if source_dirs is not None:
             lines.append("  source_dirs:")
             lines.extend(f"    - {directory}" for directory in source_dirs)
@@ -67,30 +67,30 @@ class SourceDirectoriesTest(unittest.TestCase):
 
     def test_build_indexes_configured_dirs_and_skips_gitignored_markdown(self):
         self.write_config(["wiki", "docs", "."])
-        semsearch = load_semsearch(self.root)
-        semsearch.embed_batch = lambda texts, _model: [[0.25, 0.75] for _ in texts]
+        search = load_search(self.root)
+        search.embed_batch = lambda texts, _model: [[0.25, 0.75] for _ in texts]
 
-        self.assertEqual(semsearch.cmd_build(SimpleNamespace(model="test", json=False)), 0)
-        with sqlite3.connect(semsearch.DB_PATH) as conn:
+        self.assertEqual(search.cmd_build(SimpleNamespace(model="test", json=False)), 0)
+        with sqlite3.connect(search.DB_PATH) as conn:
             indexed = {row[0] for row in conn.execute("SELECT path FROM pages")}
 
-        self.assertEqual(semsearch.configured_source_dirs(), ["wiki", "docs", "."])
+        self.assertEqual(search.configured_source_dirs(), ["wiki", "docs", "."])
         self.assertEqual(indexed, {"wiki/wiki.md", "docs/guide.md", "root.md"})
 
     def test_defaults_to_wiki_without_explicit_root(self):
         self.write_config()
-        semsearch = load_semsearch(self.root)
+        search = load_search(self.root)
 
-        self.assertEqual(semsearch.configured_source_dirs(), ["wiki"])
-        self.assertEqual(set(semsearch.source_files()), {"wiki/wiki.md"})
+        self.assertEqual(search.configured_source_dirs(), ["wiki"])
+        self.assertEqual(set(search.source_files()), {"wiki/wiki.md"})
 
     def test_build_rejects_missing_configured_directory(self):
         self.write_config(["missing"])
-        semsearch = load_semsearch(self.root)
+        search = load_search(self.root)
         stderr = io.StringIO()
 
         with contextlib.redirect_stderr(stderr):
-            result = semsearch.cmd_build(SimpleNamespace(model="test", json=False))
+            result = search.cmd_build(SimpleNamespace(model="test", json=False))
 
         self.assertEqual(result, 1)
         self.assertIn("configured source directory not found: missing", stderr.getvalue())

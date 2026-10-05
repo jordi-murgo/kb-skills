@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""wiki_semsearch.py — local hybrid (BM25 + vector + RRF) search over the wiki vault.
+"""wiki_search.py — local hybrid (BM25 + vector + RRF) search over the wiki vault.
 
 Subcommands:
-  build          index configured Markdown source directories into .vault-meta/sem/index.db
+  build          index configured Markdown source directories into .vault-meta/wiki-search/index.db
                  (incremental)
   query TEXT     search the index; --mode hybrid|bm25|vector, --top N, --json
   status         index stats and stale pages
@@ -227,7 +227,7 @@ load_env_files(VAULT_ROOT)
 _CFG = load_config_section(VAULT_ROOT, "embeddings")
 SOURCE_DIRS = source_directories(VAULT_ROOT, _CFG)
 _db = _CFG.get("db")
-DEFAULT_DB = vault_path(VAULT_ROOT, _db, "embeddings.db") if _db else VAULT_ROOT / ".vault-meta" / "sem" / "index.db"
+DEFAULT_DB = vault_path(VAULT_ROOT, _db, "embeddings.db") if _db else VAULT_ROOT / ".vault-meta" / "wiki-search" / "index.db"
 DEFAULT_MODEL = _CFG.get("model") or "bge-m3"
 OLLAMA_URL = _CFG.get("endpoint") or "http://127.0.0.1:11434"
 DB_PATH = DEFAULT_DB
@@ -872,7 +872,7 @@ def cmd_status(args):
 
 def parse_args(argv):
     p = argparse.ArgumentParser(
-        prog="wiki_semsearch.py",
+        prog="wiki_search.py",
         description="Local hybrid (BM25 + vector + RRF) search over the wiki vault.",
         epilog=(
             "config: kb-config.yaml `embeddings` section (model / endpoint base URL /"

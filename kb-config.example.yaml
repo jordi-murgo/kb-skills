@@ -82,18 +82,18 @@ m365:
     top: 100
     chat_limit: 50
 
-# --- vault tooling (wiki-semsearch / wiki-vetting) ---
+# --- vault tooling (wiki-search / wiki-vetting) ---
 # Optional: without these sections everything targets a local Ollama on
 # 127.0.0.1:11434. Values support ${VAR} and ${VAR:-default} macros expanded
 # from the environment (process env, then vault-root .env / .env.local —
 # see .env.example). CLI flags beat config values.
 
 embeddings:
-  # wiki-semsearch index model (multilingual recommended: bge-m3, qwen3-embedding)
+  # wiki-search index model (multilingual recommended: bge-m3, qwen3-embedding)
   model: ${WIKI_SEM_MODEL:-bge-m3}
   endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
   # Index location (relative to vault root). Derived cache: deletable anytime.
-  db: .vault-meta/sem/index.db
+  db: .vault-meta/wiki-search/index.db
   # Markdown source directories, relative to the vault root. Default: [wiki].
   # Git ignore rules apply. Add "." only to explicitly include the vault root.
   source_dirs:

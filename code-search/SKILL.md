@@ -1,6 +1,6 @@
 ---
 name: code-search
-description: "Trigger: buscar código, localizar implementación, indexar proyectos, code search, where is this implemented, find the code. Consulta léxica/vectorial local sobre proyectos de código fuente; devuelve rutas y líneas. Para buscar páginas Markdown del wiki usa wiki-semsearch."
+description: "Trigger: buscar código, localizar implementación, indexar proyectos, code search, where is this implemented, find the code. Consulta léxica/vectorial local sobre proyectos de código fuente; devuelve rutas y líneas. Para buscar páginas Markdown del wiki usa wiki-search."
 license: Apache-2.0
 metadata:
   author: kb-skills
@@ -12,7 +12,7 @@ argument-hint: "doctor | build | status | query TEXTO"
 
 ## Activación
 
-Usa este skill para localizar implementación en los proyectos del vault. Mantén las consultas de conocimiento Markdown en `wiki-semsearch`.
+Usa este skill para localizar implementación en los proyectos del vault. Mantén las consultas de conocimiento Markdown en `wiki-search`.
 
 ## Reglas
 

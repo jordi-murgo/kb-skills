@@ -50,9 +50,9 @@ consume copies; changes that benefit every project belong here.
   feed is the provenance, not a quote. Content claims keep the full axes.
 - Caps: 64 questions per request, 64 KiB body, batch ≤16 claims.
 
-## Embeddings (wiki-semsearch)
+## Embeddings (wiki-search)
 
-Index at `.vault-meta/sem/index.db` is derived: deleting it must always be
+Index at `.vault-meta/wiki-search/index.db` is derived: deleting it must always be
 safe. Model/endpoint from env (`WIKI_SEM_MODEL`, `WIKI_SEM_ENDPOINT`, shared
 `WIKI_OLLAMA_URL`) with defaults `bge-m3` at `http://127.0.0.1:11434`. Embedding dimensions read from
 SQLite `meta` come back as **strings** — cast before comparing (this bug

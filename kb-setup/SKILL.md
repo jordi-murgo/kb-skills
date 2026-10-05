@@ -277,7 +277,7 @@ The canonical top-level sections are:
 | `jira` | `kb-jira-sync` | Importing Jira |
 | `wiki_publish` | generic `kb-publish` deployer | Publishing with `deploy-wiki.py` |
 | `m365` | `kb-m365-fetch` | Fetching M365 data |
-| `embeddings` | `wiki-semsearch` | Optional; defaults are local |
+| `embeddings` | `wiki-search` | Optional; defaults are local |
 | `code_search` | `code-search` | Opcional; índice independiente de código |
 | `decisions` | `wiki-vetting` | Optional; defaults are local |
 | `repos` | `wiki-git-ingest` | Watching repositories |
@@ -333,7 +333,7 @@ m365:
 embeddings:
   model: ${WIKI_SEM_MODEL:-bge-m3}
   endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
-  db: .vault-meta/sem/index.db
+  db: .vault-meta/wiki-search/index.db
   source_dirs:
     - wiki
 
@@ -351,7 +351,7 @@ repos: {}
 `embeddings.source_dirs` is a non-empty list of vault-relative directories.
 It defaults to `[wiki]`; add `.` only to explicitly index the vault root.
 Git-ignored Markdown is excluded and a missing configured directory makes
-`wiki-semsearch build` fail.
+`wiki-search build` fail.
 
 `code_search` indexa código y configuración, no Markdown por defecto. Admite
 `source_dirs`, `extensions`, `model` y `endpoint`; modelo y endpoint heredan
@@ -396,7 +396,7 @@ the Graph reader consumes the nested `m365.output.*` mapping shown above.
 
 ```bash
 python3 -c "import yaml; print(yaml.safe_load(open('kb-config.yaml')).keys())"
-python3 .agents/skills/wiki-semsearch/scripts/wiki-semsearch.py status
+python3 .agents/skills/wiki-search/scripts/wiki-search.py status
 ```
 
 | Message | Cause |

@@ -163,7 +163,7 @@ The justification is two sentences below the ceiling block. Without it, the ceil
 
 ## W11 — Direct wiki write
 
-**Failure**: Brief instructs the loop to write outputs directly into `wiki/research/…`, `wiki/concepts/…`, `wiki/decisions/…`. If the loop hallucinates, the hallucination lands in the permanent corpus and contaminates future `wiki-query` answers.
+**Failure**: Brief instructs the loop to write outputs directly into `wiki/research/…`, `wiki/concepts/…`, `wiki/decisions/…`. If the loop hallucinates, the hallucination lands in the permanent corpus and contaminates future `wiki-search` answers.
 
 **Why it breaks research**: No human-review gate. The wiki becomes a write-once, never-curated artifact store.
 
