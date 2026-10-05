@@ -28,7 +28,7 @@ Three layers:
 vault/
 ├── .raw/       # Layer 1: immutable source documents
 ├── wiki/       # Layer 2: LLM-generated knowledge base
-└── CLAUDE.md   # Layer 3: schema and instructions (this plugin)
+└── AGENTS.md   # Layer 3: project schema and content-maintenance instructions
 ```
 
 Standard wiki structure:
@@ -39,6 +39,8 @@ wiki/
 ├── log.md              # chronological record of all operations
 ├── hot.md              # hot cache: recent context summary (~500 words)
 ├── overview.md         # executive summary of the whole wiki
+├── goals.md            # approved outcomes and observable success criteria
+├── dashboard.md        # goal-driven project state and blockers
 ├── sources/            # one summary page per raw source
 ├── entities/           # people, orgs, products, repos
 │   └── _index.md
@@ -95,6 +97,10 @@ Keep it under 500 words. It is a cache, not a journal. Overwrite it completely e
 
 ---
 
+## Goals and dashboard
+
+Read [Project state](references/project-state.md) when defining goals, scaffolding state views or completing a changed-content batch. Use wiki/goals.md for approved objectives, wiki/dashboard.md for evidence-backed status, and wiki/meta/dashboard.md only for optional lint health. After real content changes, update index/subindexes, prepend one log entry, refresh hot (<=500 words), and refresh dashboard once per batch before reporting success. Preserve human goal definitions, historical log entries and manual dashboard notes. Unchanged ingests/raw-only fetches/cache rebuilds are not new content events.
+
 ## Operations
 
 Route to the correct operation based on what the user says:
@@ -120,15 +126,15 @@ Steps:
 2. Ask: "What is this vault for?" (one question, then proceed).
 3. Create full folder structure under `wiki/` based on the mode.
 4. Create domain pages + `_index.md` sub-indexes.
-5. Create `wiki/index.md`, `wiki/log.md`, `wiki/hot.md`, `wiki/overview.md`.
+5. Create `wiki/index.md`, `wiki/log.md`, `wiki/hot.md`, `wiki/overview.md`, `wiki/goals.md`, `wiki/dashboard.md` — read [Project state](references/project-state.md), bootstrap only missing files, do not invent goals.
 6. Create `_templates/` files for each note type.
-7. Create the vault CLAUDE.md using the template below.
+7. Merge the project AGENTS.md using the template below; preserve existing rules. If CLAUDE.md exists, keep a single pointer to AGENTS.md rather than duplicating policy.
 8. Initialize git. Read `references/git-setup.md`.
 9. Present the structure and ask: "Want to adjust anything before we start?"
 
-### Vault CLAUDE.md Template
+### Vault AGENTS.md Template
 
-Create this file in the vault root when scaffolding a new project vault (not this plugin directory):
+Merge this into the project root `AGENTS.md` when scaffolding a new project vault (not this plugin directory); never replace existing unrelated rules:
 
 ```markdown
 # [WIKI NAME]: LLM Wiki
@@ -150,6 +156,7 @@ Created: YYYY-MM-DD
 - wiki/index.md is the master catalog: update on every ingest
 - wiki/log.md is append-only: never edit past entries
 - New log entries go at the TOP of the file
+- wiki/goals.md is the authoritative outcome register (ID, intended outcome, success criteria, authority, priority, owner/time, scope); wiki/dashboard.md records evidence-backed status/gap/next step per goal; wiki/hot.md stays <=500 words; one top log entry per actual content batch with no duplication on no-op batches — detailed schema in [Project state](references/project-state.md)
 
 ## Operations
 
@@ -193,8 +200,8 @@ Your job as the LLM:
 1. Set up the vault (once)
 2. Scaffold wiki structure from user's domain description
 3. Route ingest, query, and lint to the correct sub-skill
-4. Maintain hot cache after every operation
-5. Always update index, sub-indexes, log, and hot cache on changes
+4. Maintain hot cache only on meaningful context changes, not gratuitous timestamp churn
+5. Always update index, sub-indexes, log, hot cache, and the goals-driven dashboard once per changed batch
 6. Always use frontmatter and wikilinks
 7. Never modify .raw/ sources
 

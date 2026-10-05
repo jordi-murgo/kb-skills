@@ -1,6 +1,6 @@
 ---
 name: wiki-semsearch
-description: "Semantic and hybrid search over the wiki vault's Markdown pages: local BM25 + embeddings (RRF fusion) when keyword search misses — paraphrases, cross-language, concept questions. Builds an incremental index; read-only for the vault. Searches wiki knowledge, not source code — for code use code-search. Triggers on: search the wiki semantically, similar pages to, what relates to, hybrid search, wiki query deep, find pages about."
+description: "Semantic and hybrid search over the wiki vault's Markdown pages: local BM25 + embeddings (RRF fusion) when keyword search misses — paraphrases, cross-language, concept questions. Builds an incremental index; read-only for the vault. Searches wiki knowledge, not source code — for code use code-search. Ranks candidate pages; answering with synthesis is wiki-query's job. Triggers on: search the wiki semantically, similar pages to, what relates to, hybrid search, find pages about."
 argument-hint: "query [TEXT] | build | status"
 ---
 

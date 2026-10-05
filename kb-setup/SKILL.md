@@ -406,7 +406,19 @@ python3 .agents/skills/wiki-semsearch/scripts/wiki-semsearch.py status
 | `<section>.enabled is false` | Pipeline is off, not broken |
 | `is missing: <key>` | Required value for an enabled pipeline is absent |
 
-## 7. Verification checklist
+## 7. Project agent instructions and state views
+
+Install [the maintenance block](assets/project-agents-block.md) into the PROJECT root `AGENTS.md`, not this upstream repository's instruction file. This makes content maintenance mandatory even when a task bypasses a specific ingest/save skill.
+
+1. Read the existing project instructions and state files. Keep all unrelated rules and custom content. If a project rule conflicts with this contract, report the conflict and obtain its resolution rather than overriding it silently.
+2. Create `AGENTS.md` only when absent. If both `<!-- kb-skills:wiki-maintenance:start -->` and `<!-- kb-skills:wiki-maintenance:end -->` occur exactly once in order, replace only that complete marked block with the asset's contents. If neither exists, insert the block once after existing instructions. If markers are partial, duplicated or reversed, stop the merge and report the malformed section; do not append another block or truncate the file.
+3. If `CLAUDE.md` exists and the runtime reads it separately, ensure one pointer saying `Read and follow AGENTS.md for project instructions and wiki maintenance.` Preserve its other rules; do not duplicate the whole policy or create a second source of truth. Resolve conflicting old maintenance instructions explicitly.
+4. Preserve existing `wiki/goals.md` and `wiki/dashboard.md`. Bootstrap only missing views using the block's required fields; use normal wiki frontmatter, plain Markdown/wikilinks, explicit unknowns and a no-approved-goals state instead of guessed project objectives. Where the installed `wiki` skill is available, follow its `references/project-state.md` templates and evidence rules. Link both views from `wiki/index.md`; do not rename or replace `wiki/goals/` detail pages or the lint-health dashboard.
+5. Verify the marked block occurs once, unrelated instruction text is unchanged, existing goals/manual notes remain, and links resolve. Apply setup a second time: it must produce no further changes or duplicate instruction pointers. Exercise one changed-content batch and confirm index/hot/log/dashboard agree, then an unchanged retry and confirm no extra content log entry.
+
+These are AI-agent writing instructions, not a generator: no tooling writes `wiki/**` or `.raw/**`. Goal definitions remain human/project-authoritative; dashboard state is evidence-derived. The installer asset is self-contained so copying `kb-setup` alone retains the completion contract.
+
+## 8. Verification checklist
 
 ```bash
 ls .agents/skills/                                   # real dirs, no symlinks

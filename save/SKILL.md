@@ -51,6 +51,7 @@ If the user specifies a type, use that. If not, pick the best fit based on the c
    - From: conversation on [brief topic description]
    ```
 9. **Update** `wiki/hot.md` to reflect the new addition.
+   Also refresh `wiki/dashboard.md` from `wiki/goals.md` and the filed note's evidence before confirming; no extra log entry for this refresh.
 10. **Confirm**: "Saved as [[Note Title]] in wiki/[folder]/."
 
 ---

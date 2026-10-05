@@ -253,7 +253,7 @@ sources:
    - Key finding: [one sentence]
    - Queue-task: R-YYYY-NNN     # only if QUEUE_MODE=1
    ```
-3. Update `wiki/hot.md` with the research summary
+3. Update `wiki/hot.md` with the research summary. Also refresh `wiki/dashboard.md` from `wiki/goals.md` and the research evidence before reporting — draft research outputs must not be treated as proof of delivered goals.
 4. **If `QUEUE_MODE=1`**: update the row in `wiki/meta/research-queue.md`:
    - Flip `status: in-progress` → `status: done`.
    - Set `finished: <today>`, bump `updated:`.
@@ -274,12 +274,13 @@ sources:
    - wiki/index.md
    - wiki/log.md
    - wiki/meta/research-queue.md   <!-- only if QUEUE_MODE=1 -->
+   - wiki/dashboard.md
    ```
 
    Rules:
    - One block per autoresearch run. Never edit prior blocks.
    - If `git status --porcelain` shows files outside the run's known outputs (e.g. lint script changes, raw clippings), surface them in a `### chore(repo): unrelated changes — confirm before committing` sub-section so the user can decide whether to bundle or split.
-   - Coordinator files (`hot.md`, `index.md`, `log.md`) always go in their own `chore(wiki):` cluster, never bundled into `feat(research):`.
+   - Coordinator files (`hot.md`, `index.md`, `log.md`, `dashboard.md`) always go in their own `chore(wiki):` cluster, never bundled into `feat(research):`.
 
 ---
 

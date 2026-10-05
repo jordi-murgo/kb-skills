@@ -102,6 +102,24 @@ Commit the synchronization separately from vault content changes. This keeps
 the upstream version and local adaptations reviewable.
 
 
+## Keeping project state current
+
+kb-setup installs one marked maintenance block into the project root `AGENTS.md`
+(see [`kb-setup/assets/project-agents-block.md`](kb-setup/assets/project-agents-block.md)).
+Every changed-content batch must update the navigation (`index.md`,
+sub-indexes) plus the state views: `wiki/hot.md`, `wiki/log.md` and
+`wiki/dashboard.md`. `wiki/goals.md` defines approved outcomes with observable
+success criteria; `wiki/dashboard.md` records evidence-backed goal status, gaps
+and next steps — it is project progress, not the lint-health view at
+`wiki/meta/dashboard.md`. Schema, templates and evidence rules:
+[`wiki/references/project-state.md`](wiki/references/project-state.md).
+
+Setup preserves existing project instructions, goals and manual notes — it only
+bootstraps missing state views. No-op/unchanged batches and raw-only fetches do
+not duplicate log entries. No tooling generator is involved: these are
+AI-agent writing instructions, nothing writes `wiki/**` or `.raw/**`
+programmatically.
+
 ## Configuration
 
 Nothing project-specific belongs in skill code. The complete reference is

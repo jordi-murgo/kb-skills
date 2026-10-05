@@ -231,7 +231,9 @@ git status --short .raw/jira/
 - **Canonical link** — every issue page carries its Jira URL. Preserve it.
 
 Then update `wiki/index.md`, append to `wiki/log.md` (newest entry at the TOP),
-and refresh `wiki/hot.md`.
+and refresh `wiki/hot.md`. When wiki content changed, also refresh
+`wiki/dashboard.md` from `wiki/goals.md` and the changed evidence. Raw-only
+connector fetches do not create wiki content events.
 
 ---
 

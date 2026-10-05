@@ -189,6 +189,7 @@ Steps:
     - Key insight: One sentence on what is new.
     ```
 12. **Check for contradictions.** If new info conflicts with existing pages, add `> [!contradiction]` callouts on both pages.
+13. **Refresh** `wiki/dashboard.md` from `wiki/goals.md` and the changed evidence before reporting completion; preserve manual notes and existing goal rows, no invented objectives or progress.
 
 ---
 
@@ -201,7 +202,7 @@ Steps:
 1. List all files to process. Confirm with user before starting.
 2. Process each source following the single ingest flow. Defer cross-referencing between sources until step 3.
 3. After all sources: do a cross-reference pass. Look for connections between the newly ingested sources.
-4. Update index, hot cache, and log once at the end (not per-source).
+4. Update index, hot cache, log, and `wiki/dashboard.md` once per changed batch at the end (not per-source), then report once.
 5. Report: "Processed N sources. Created X pages, updated Y pages. Here are the key connections I found."
 
 Batch ingest is less interactive. For 30+ sources, expect significant processing time. Check in with the user after every 10 sources.
@@ -301,7 +302,7 @@ Do not silently overwrite old claims. Flag and let the user decide.
 
 - **Source files under `.raw/` are immutable.** Do not modify the files that users drop there (articles, transcripts, images). The `.raw/.manifest.json` delta tracker and its `address_map` (DragonScale Mechanism 2) are the only files under `.raw/` that `wiki-ingest` itself maintains. Treat every other file under `.raw/` as read-only source content.
 - Do not create duplicate pages. Always check the index and search before creating.
-- Do not skip the log entry. Every ingest must be recorded.
+- Do not skip the log entry for changed or new ingest content. Every changed/new ingest must be recorded.
 - Do not skip the hot cache update. It is what keeps future sessions fast.
 
 ---
