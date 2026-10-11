@@ -131,3 +131,19 @@ repos:
   # Existing local clone instead of a mirror (changelog + conventional commits):
   #my-spike:
   #  path: ../my-project-spike
+
+# --- tag vocabulary (wiki-lint: lint-tag-taxonomy) ---
+# Optional: without this section the check skips. With a vocabulary, any page
+# tag outside it is a lint finding — and off-vocabulary tags whose normalized
+# form (accents/separators/singular) matches one allowed tag get an
+# actionable hint instead of a bare violation. ${VAR} macros work;
+# case-insensitive by default (set case_sensitive: true to change).
+# Every run refreshes the derived registry .vault-meta/tag-registry.json;
+# `lint-tag-taxonomy.py --survey` prints the inventory + near-duplicate
+# clusters to curate these two keys.
+
+#tags:
+#  allowed: [source, jira, entity, meta, security, deliverable]
+#  aliases:
+#    kick-off: kickoff        # known variant -> canonical allowed tag
+#  case_sensitive: false

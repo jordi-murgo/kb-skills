@@ -66,7 +66,7 @@ CHECKS = [
     ("lint-orphans.py", "Orphan Pages"),
     ("lint-frontmatter.py", "Frontmatter Gaps"),
     ("lint-contradictions.py", "Contradictions"),
-    ("lint-relations.py", "Typed Relations"),
+    ("lint-tag-taxonomy.py", "Tag Vocabulary"),
 ]
 
 
