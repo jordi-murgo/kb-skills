@@ -60,6 +60,15 @@ survived one fix; it had two call sites).
 
 ## Measurement notes worth keeping
 
+- Ollama 0.40.1 serves `/v1/systemone` **natively** for models tagged with the
+  `decision` capability (full noul/choice/score wire contract; `answers.<qid>.noul`,
+  echo of `model`, `usage` block). Verified end-to-end with `wiki-vet.py` against a
+  live server on 2026-10-11 — no special middleware needed. Two sharp edges:
+  decision-capability models refuse `/api/chat` (400 "does not support chat"), and
+  an unknown model tag in the payload yields a misleading 404, not a 400.
+- The official `langchain-typesafe` SDK (LangChain partner) works against the same
+  endpoint, but `model=` must be passed explicitly — its default `jev-latest` 404s
+  and only `TYPESAFE_API_KEY`/`TYPESAFE_BASE_URL` env vars exist.
 - System One prefill on an iGPU costs ~1.4 s per 1k state tokens; keep states
   small (≤6k tokens) or requests blow both the client timeout and the host
   agent's context-handler limit.
