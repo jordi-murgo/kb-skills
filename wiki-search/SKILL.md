@@ -14,6 +14,7 @@ Run from the project cwd with the whole skill copied into `.agents/skills/wiki-s
 python3 .agents/skills/wiki-search/scripts/wiki-search.py status
 python3 .agents/skills/wiki-search/scripts/wiki-search.py query "QUESTION TERMS" --top 8 --mode vector
 python3 .agents/skills/wiki-search/scripts/wiki-search.py build
+python3 .agents/skills/wiki-search/scripts/wiki-search.py eval evals/wiki-search.json --mode bm25 --mode vector --mode hybrid
 ```
 
 `query TEXT` ranks candidates; it does not synthesize an answer. Quick/standard/deep are agent answer depths, not CLI switches. If using the source checkout instead, invoke `<kb-skills>/wiki-search/scripts/wiki-search.py` from the project cwd, replacing `<kb-skills>` with the checkout location. Resolve the script inside the loaded skill when installed elsewhere; do not change cwd to the skill directory. Root discovery walks cwd first, then script ancestors.

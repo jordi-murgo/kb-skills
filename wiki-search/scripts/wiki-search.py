@@ -6,6 +6,8 @@ Subcommands:
                  (incremental)
   query TEXT     search the index; --mode hybrid|bm25|vector, --top N, --json
   status         index stats and stale pages
+  eval GOLD.json score retrieval (hit/recall/precision/nDCG@k, MRR, latency) against a
+                 human-authored gold query set; repeat --mode to compare modes
 
 Fully local: BM25 via sqlite FTS5 (own inverted-index fallback when FTS5 is
 unavailable), embeddings via the local Ollama /api/embed endpoint.
@@ -482,6 +484,11 @@ def bm25_rank(conn, backend, qtext, limit):
     if not toks:
         return []
     if backend == "fts5":
+        # AND, unlike own_bm25_rank's disjunctive scoring. Switching to OR fixes
+        # empty BM25 lists for natural-language queries, but with equal-weight
+        # RRF it made hybrid worse on a multilingual vault (cross-language BM25
+        # noise outranks correct vector hits). Change it only together with a
+        # fusion change, measured with `eval` on a real gold set.
         expr = " AND ".join(f'"{t}"' for t in toks)
         try:
             rows = conn.execute(
@@ -690,6 +697,46 @@ def cmd_build(args):
     return 0
 
 
+def rank_chunks(conn, backend, qtext, mode, model, dims):
+    """Shared ranking core for `query` and `eval`.
+
+    Returns (ranked, bm25_list, vec_list, effective_mode, notes). `vector` mode
+    raises RuntimeError when the query cannot be embedded; `hybrid` degrades to
+    the list that has results and records why in `notes`."""
+    effective = mode
+    notes = []
+    bm25_list, vec_list = [], []
+    if mode in ("hybrid", "bm25"):
+        bm25_list = bm25_rank(conn, backend, qtext, FUSION_DEPTH)
+    if mode in ("hybrid", "vector"):
+        try:
+            qvec = embed_batch([qtext], model)[0]
+            if dims is not None and len(qvec) != dims:
+                raise RuntimeError(
+                    f"query embedding dim {len(qvec)} != index dim {dims}"
+                )
+            vec_list = vector_rank(conn, qvec, FUSION_DEPTH)
+        except RuntimeError as e:
+            if mode == "vector":
+                raise
+            notes.append(f"{e}; falling back to bm25")
+            effective = "bm25"
+    if mode == "hybrid" and not vec_list and bm25_list:
+        notes.append("no vector results; falling back to bm25")
+        effective = "bm25"
+    if mode == "hybrid" and not bm25_list and vec_list:
+        notes.append("no bm25 matches; falling back to vector")
+        effective = "vector"
+
+    if effective == "bm25":
+        ranked = bm25_list
+    elif effective == "vector":
+        ranked = vec_list
+    else:
+        ranked = rrf_fuse([bm25_list, vec_list])
+    return ranked, bm25_list, vec_list, effective, notes
+
+
 def cmd_query(args):
     if not DB_PATH.exists():
         print(f"error: no index at {DB_PATH}; run 'build' first", file=sys.stderr)
@@ -709,37 +756,15 @@ def cmd_query(args):
         )
 
     qtext = args.text.strip()
-    effective = args.mode
-    bm25_list, vec_list = [], []
-    if args.mode in ("hybrid", "bm25"):
-        bm25_list = bm25_rank(conn, backend, qtext, FUSION_DEPTH)
-    if args.mode in ("hybrid", "vector"):
-        try:
-            qvec = embed_batch([qtext], model)[0]
-            if dims is not None and len(qvec) != dims:
-                raise RuntimeError(
-                    f"query embedding dim {len(qvec)} != index dim {dims}"
-                )
-            vec_list = vector_rank(conn, qvec, FUSION_DEPTH)
-        except RuntimeError as e:
-            if args.mode == "vector":
-                print(f"error: {e}", file=sys.stderr)
-                return 1
-            print(f"note: {e}; falling back to bm25", file=sys.stderr)
-            effective = "bm25"
-    if args.mode == "hybrid" and not vec_list and bm25_list:
-        print("note: no vector results; falling back to bm25", file=sys.stderr)
-        effective = "bm25"
-    if args.mode == "hybrid" and not bm25_list and vec_list:
-        print("note: no bm25 matches; falling back to vector", file=sys.stderr)
-        effective = "vector"
-
-    if effective == "bm25":
-        ranked = bm25_list
-    elif effective == "vector":
-        ranked = vec_list
-    else:
-        ranked = rrf_fuse([bm25_list, vec_list])
+    try:
+        ranked, bm25_list, vec_list, effective, notes = rank_chunks(
+            conn, backend, qtext, args.mode, model, dims
+        )
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    for note in notes:
+        print(f"note: {note}", file=sys.stderr)
     ranked = ranked[: args.top]
 
     bm25_map = rank_map(bm25_list)
@@ -797,6 +822,234 @@ def cmd_query(args):
             tag = ("  [" + " ".join(tags) + "]") if tags else ""
             print(f"{item['rank']}. {item['page']} — {item['heading']}  (score {item['score']}){tag}")
             print(f"   {item['snippet']}")
+    return 0
+
+
+# ---------------------------------------------------------------- evaluation
+
+
+def load_eval_dataset(path: Path):
+    """Read a human-authored gold set: {name?, queries:[{id, text, relevant[],
+    category?}]}. `relevant` holds vault-relative page paths, as `query`
+    reports them in its `page` field."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as e:
+        raise SystemExit(f"error: cannot read eval dataset {path}: {e}")
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"error: eval dataset {path} is not valid JSON: {e}")
+    if not isinstance(data, dict) or not isinstance(data.get("queries"), list) or not data["queries"]:
+        raise SystemExit("error: eval dataset must be an object with a non-empty 'queries' list")
+    seen = set()
+    queries = []
+    for i, q in enumerate(data["queries"], 1):
+        if not isinstance(q, dict):
+            raise SystemExit(f"error: eval query #{i} must be an object")
+        qid, text, relevant = q.get("id"), q.get("text"), q.get("relevant")
+        if not isinstance(qid, str) or not qid.strip():
+            raise SystemExit(f"error: eval query #{i} needs a non-empty string 'id'")
+        if qid in seen:
+            raise SystemExit(f"error: duplicate eval query id: {qid}")
+        seen.add(qid)
+        if not isinstance(text, str) or not text.strip():
+            raise SystemExit(f"error: eval query {qid} needs a non-empty 'text'")
+        if (
+            not isinstance(relevant, list)
+            or not relevant
+            or not all(isinstance(p, str) and p.strip() for p in relevant)
+        ):
+            raise SystemExit(f"error: eval query {qid} needs a non-empty 'relevant' list of page paths")
+        category = q.get("category")
+        if category is not None and not isinstance(category, str):
+            raise SystemExit(f"error: eval query {qid} 'category' must be a string")
+        queries.append({
+            "id": qid,
+            "text": text.strip(),
+            "relevant": list(dict.fromkeys(p.strip() for p in relevant)),
+            "category": category or "uncategorized",
+        })
+    return str(data.get("name") or path.stem), queries
+
+
+def dedupe_pages(paths, limit):
+    """Collapse a chunk ranking into page order: a page ranks where its best
+    chunk ranks."""
+    pages, seen = [], set()
+    for path in paths:
+        if path not in seen:
+            seen.add(path)
+            pages.append(path)
+            if len(pages) >= limit:
+                break
+    return pages
+
+
+def retrieval_metrics(retrieved, relevant, ks):
+    """Binary-relevance metrics for one query over a page ranking."""
+    rel = set(relevant)
+    out = {"hit": {}, "recall": {}, "precision": {}, "ndcg": {}}
+    for k in ks:
+        found = [rank for rank, page in enumerate(retrieved[:k], 1) if page in rel]
+        dcg = sum(1.0 / math.log2(rank + 1) for rank in found)
+        idcg = sum(1.0 / math.log2(rank + 1) for rank in range(1, min(len(rel), k) + 1))
+        out["hit"][k] = 1.0 if found else 0.0
+        out["recall"][k] = len(found) / len(rel)
+        out["precision"][k] = len(found) / k
+        out["ndcg"][k] = dcg / idcg
+    first = next((rank for rank, page in enumerate(retrieved, 1) if page in rel), None)
+    out["first_relevant_rank"] = first
+    out["rr"] = 1.0 / first if first else 0.0
+    return out
+
+
+def percentile(values, pct):
+    """Nearest-rank percentile."""
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(pct / 100 * len(ordered)) - 1)]
+
+
+def mean(values):
+    return sum(values) / len(values) if values else 0.0
+
+
+def evaluate_mode(conn, backend, model, dims, queries, mode, ks):
+    """Run every gold query in one mode; returns the aggregate report."""
+    max_k = max(ks)
+    per_query = []
+    for q in queries:
+        t0 = time.perf_counter()
+        ranked, _bm25, _vec, effective, notes = rank_chunks(
+            conn, backend, q["text"], mode, model, dims
+        )
+        latency_ms = (time.perf_counter() - t0) * 1000.0
+        cids = [cid for cid, _ in ranked]
+        paths = {}
+        if cids:
+            qmarks = ",".join("?" * len(cids))
+            paths = dict(conn.execute(f"SELECT id, path FROM chunks WHERE id IN ({qmarks})", cids))
+        retrieved = dedupe_pages((paths[cid] for cid in cids if cid in paths), max_k)
+        metrics = retrieval_metrics(retrieved, q["relevant"], ks)
+        per_query.append({
+            "query_id": q["id"],
+            "category": q["category"],
+            "effective_mode": effective,
+            "notes": notes,
+            "latency_ms": round(latency_ms, 1),
+            "retrieved": retrieved,
+            "relevant": q["relevant"],
+            "first_relevant_rank": metrics["first_relevant_rank"],
+            "rr": round(metrics["rr"], 4),
+            "_metrics": metrics,
+        })
+
+    def agg(rows, key):
+        return {k: round(mean([r["_metrics"][key][k] for r in rows]), 4) for k in ks}
+
+    by_category = {}
+    for cat in sorted({r["category"] for r in per_query}):
+        rows = [r for r in per_query if r["category"] == cat]
+        by_category[cat] = {
+            "n": len(rows),
+            "mrr": round(mean([r["rr"] for r in rows]), 4),
+            "recall_at_k": agg(rows, "recall"),
+        }
+    latencies = [r["latency_ms"] for r in per_query]
+    report = {
+        "mode": mode,
+        "num_queries": len(per_query),
+        "ks": ks,
+        "hit_at_k": agg(per_query, "hit"),
+        "recall_at_k": agg(per_query, "recall"),
+        "precision_at_k": agg(per_query, "precision"),
+        "ndcg_at_k": agg(per_query, "ndcg"),
+        "mrr": round(mean([r["rr"] for r in per_query]), 4),
+        "latency_ms": {
+            "p50": round(percentile(latencies, 50), 1),
+            "p95": round(percentile(latencies, 95), 1),
+            "mean": round(mean(latencies), 1),
+            "max": round(max(latencies), 1),
+        },
+        "fallback_queries": sum(1 for r in per_query if r["effective_mode"] != mode),
+        "by_category": by_category,
+        "per_query": [{k: v for k, v in r.items() if k != "_metrics"} for r in per_query],
+    }
+    return report
+
+
+def cmd_eval(args):
+    if not DB_PATH.exists():
+        print(f"error: no index at {DB_PATH}; run 'build' first", file=sys.stderr)
+        return 1
+    name, queries = load_eval_dataset(Path(args.dataset))
+    conn = connect_readonly()
+    backend = get_meta(conn, "bm25_backend") or "fts5"
+    index_model = get_meta(conn, "model") or DEFAULT_MODEL
+    dims = get_meta(conn, "dims")
+    if isinstance(dims, str):
+        dims = int(dims)
+    model = args.model or index_model
+
+    indexed = {row[0] for row in conn.execute("SELECT path FROM pages")}
+    missing = sorted({p for q in queries for p in q["relevant"] if p not in indexed})
+    if missing:
+        conn.close()
+        print(
+            "error: relevant pages not in the index (unreachable; fix the dataset"
+            " or run 'build'):",
+            file=sys.stderr,
+        )
+        for path in missing:
+            print(f"  {path}", file=sys.stderr)
+        return 1
+
+    modes = list(dict.fromkeys(args.mode or ["hybrid"]))
+    reports = []
+    for mode in modes:
+        try:
+            reports.append(evaluate_mode(conn, backend, model, dims, queries, mode, args.ks))
+        except RuntimeError as e:
+            conn.close()
+            print(f"error: {mode} mode: {e}", file=sys.stderr)
+            return 1
+    conn.close()
+
+    payload = {
+        "dataset": name,
+        "num_queries": len(queries),
+        "index_model": index_model,
+        "query_model": model,
+        "ks": args.ks,
+        "reports": reports,
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    max_k = max(args.ks)
+    print(f"dataset {name}: {len(queries)} queries, index model {index_model}")
+    head = ["mode"] + [f"hit@{k}" for k in args.ks] + [f"recall@{max_k}", f"ndcg@{max_k}", "MRR", "p50ms"]
+    print("  ".join(f"{h:>9}" for h in head))
+    for r in reports:
+        cells = [r["mode"]] + [f"{r['hit_at_k'][k]:.3f}" for k in args.ks] + [
+            f"{r['recall_at_k'][max_k]:.3f}",
+            f"{r['ndcg_at_k'][max_k]:.3f}",
+            f"{r['mrr']:.3f}",
+            f"{r['latency_ms']['p50']:.0f}",
+        ]
+        print("  ".join(f"{c:>9}" for c in cells))
+        if r["fallback_queries"]:
+            print(f"  note: {r['fallback_queries']} {r['mode']} queries fell back to a single list")
+    for r in reports:
+        if len(r["by_category"]) > 1:
+            print(f"\n{r['mode']} by category (MRR / recall@{max_k}):")
+            for cat, c in r["by_category"].items():
+                print(f"  {cat:<24} n={c['n']:<3} {c['mrr']:.3f} / {c['recall_at_k'][max_k]:.3f}")
+    if args.per_query:
+        for r in reports:
+            print(f"\n{r['mode']} per query (first relevant rank; '-' = not in top {max_k}):")
+            for q in r["per_query"]:
+                rank = q["first_relevant_rank"] or "-"
+                print(f"  {q['query_id']:<20} {rank!s:>3}  top: {', '.join(q['retrieved'][:3])}")
     return 0
 
 
@@ -897,12 +1150,29 @@ def parse_args(argv):
     s = sub.add_parser("status", help="index stats and stale pages")
     s.add_argument("--json", action="store_true", help="JSON status")
 
+    e = sub.add_parser("eval", help="score retrieval against a human-authored gold query set")
+    e.add_argument("dataset", help="gold set JSON: {name, queries: [{id, text, relevant: [page paths], category}]}")
+    e.add_argument("--mode", action="append", choices=("hybrid", "bm25", "vector"),
+                   help="mode to evaluate; repeat to compare modes (default hybrid)")
+    e.add_argument("--k", default="1,3,5,10", help="comma-separated page cutoffs (default %(default)s)")
+    e.add_argument("--model", default=None, help="embedding model override (default: index model)")
+    e.add_argument("--json", action="store_true", help="JSON report incl. per-query results")
+    e.add_argument("--per-query", action="store_true", help="also list per-query first relevant rank")
+
     args = p.parse_args(argv)
     if args.cmd == "query":
         if not args.text.strip():
             q.error("query text must not be empty")
         if args.top < 1:
             q.error("--top must be >= 1")
+    if args.cmd == "eval":
+        try:
+            ks = sorted({int(part) for part in args.k.split(",") if part.strip()})
+        except ValueError:
+            e.error("--k must be comma-separated integers")
+        if not ks or ks[0] < 1:
+            e.error("--k needs at least one cutoff >= 1")
+        args.ks = ks
     return args
 
 
@@ -912,6 +1182,8 @@ def main(argv=None):
         return cmd_build(args)
     if args.cmd == "query":
         return cmd_query(args)
+    if args.cmd == "eval":
+        return cmd_eval(args)
     return cmd_status(args)
 
 

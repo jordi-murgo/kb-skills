@@ -8,6 +8,7 @@ Fully local: BM25 via SQLite FTS5 (own inverted index as fallback), embeddings v
 python3 .agents/skills/wiki-search/scripts/wiki-search.py build                  # incremental: configured source dirs
 python3 .agents/skills/wiki-search/scripts/wiki-search.py status                 # counts, staleness, backend
 python3 .agents/skills/wiki-search/scripts/wiki-search.py query "TEXT" [--top 8] [--mode hybrid|bm25|vector] [--json]
+python3 .agents/skills/wiki-search/scripts/wiki-search.py eval GOLD.json [--mode M]... [--k 1,3,5,10] [--json] [--per-query]
 ```
 
 Add `--json` to `build` or `status` for machine-readable reports. `query` fails with "no index … run 'build' first" rather than building automatically; `status` is the actual staleness check and reports pages/chunks/embedded/model/dims/backend/source_dirs/last_build/stale/new.
@@ -28,4 +29,19 @@ Without config: `bge-m3` at `http://127.0.0.1:11434`, index at `.vault-meta/wiki
 
 ## Query semantics
 
-Default mode `hybrid` fuses BM25 and vector lists with RRF (fusion depth 200) and falls back to whichever list is non-empty (multi-term AND misses happen in bm25). A query `--model` override differing from the index model warns that cosine scores may be meaningless; a model change forces full re-embedding on the next build. Empty query text and `--top < 1` are rejected.
+Default mode `hybrid` fuses BM25 and vector lists with RRF (fusion depth 200) and falls back to whichever list is non-empty. The FTS5 backend matches all query terms (AND), so natural-language questions often have no BM25 hits and `hybrid` then ranks by vector alone — measured on vulcano-kb in 5 of 7 smoke queries. `query --json` reports `bm25_rank`/`vector_rank` per hit, and `eval` counts these fallbacks. A query `--model` override differing from the index model warns that cosine scores may be meaningless; a model change forces full re-embedding on the next build. Empty query text and `--top < 1` are rejected.
+
+## Retrieval evaluation
+
+`eval` scores the existing index against a human-authored gold set, read-only (it never builds). Measure before changing ranking, fusion or chunking; a change ships only if the metrics improve on a real gold set.
+
+```json
+{"name": "vault-gold", "queries": [
+  {"id": "m2m-en", "category": "cross-language", "text": "machine-to-machine OAuth naming",
+   "relevant": ["wiki/arquitectura/m2m-service-credentials.md"]}
+]}
+```
+
+- `relevant` holds vault-relative page paths exactly as `query` reports `page`; any path not in the index fails the run instead of silently scoring zero (fix the set or `build`).
+- Chunks collapse to pages at their best-ranked chunk; metrics are binary-relevance hit/recall/precision/nDCG at each `--k`, MRR, and latency p50/p95. `--mode` repeats to compare modes; categories break MRR/recall down per query type.
+- Write questions the way users ask them, not page titles, and mix exact identifiers, paraphrases and cross-language queries. Keep the set outside `.vault-meta/` (it is not derived) and outside `wiki/` (it is not knowledge), e.g. a committed `evals/wiki-search.json` at the vault root. A handful of queries is a smoke test; decide ranking changes on dozens.
