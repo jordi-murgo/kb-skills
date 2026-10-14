@@ -67,6 +67,7 @@ CHECKS = [
     ("lint-frontmatter.py", "Frontmatter Gaps"),
     ("lint-contradictions.py", "Contradictions"),
     ("lint-tag-taxonomy.py", "Tag Vocabulary"),
+    ("lint-misplaced-pages.py", "Misplaced Pages"),
 ]
 
 

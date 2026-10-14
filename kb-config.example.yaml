@@ -147,3 +147,18 @@ repos:
 #  aliases:
 #    kick-off: kickoff        # known variant -> canonical allowed tag
 #  case_sensitive: false
+
+# --- page layout mapping (wiki-lint: lint-misplaced-pages) ---
+# Optional: without this section the check skips. With a mapping, any page
+# whose frontmatter type is not allowed in its top-level folder is a lint
+# finding. Exempts meta/, .reciclaje/, root pages and _index.md. Each type
+# maps to a NON-EMPTY list of top-level folders (use exempt_folders or
+# type-specific meta pages instead of empty lists). ${VAR} macros work.
+#
+#layout:
+#  type_folders:
+#    source: [sources]
+#    concept: [concepts]
+#    decision: [decisions]
+#    entity: [entities]
+#  require_type: true
