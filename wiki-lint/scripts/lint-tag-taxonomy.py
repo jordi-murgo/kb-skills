@@ -39,7 +39,7 @@ import re
 import sys
 from pathlib import Path
 
-MACRO_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?:-([^}]*))?\}")
+MACRO_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 SKIP_BASENAMES = {"log.md", "hot.md", "index.md"}
 SKIP_PARENTS = {"meta"}
