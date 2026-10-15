@@ -63,7 +63,7 @@ Trigger: user passes a URL starting with `https://`.
 Steps:
 
 1. **Fetch** the page using WebFetch.
-2. **Clean** (optional): strip ads, nav, and clutter from the fetched page. Typically saves 40-60% tokens. Fall back to raw WebFetch output if no cleaning tool is available.
+2. **Clean** (optional): strip ads, nav, and clutter from the fetched page. Typically saves 40-60% tokens. Preferred cleaner: `defuddle` (`npx defuddle parse <url> --markdown`, MIT, kepano/defuddle); fall back to raw WebFetch output if it is not installed. Do not install anything without user approval.
 3. **Derive slug** from the URL path (last segment, lowercased, spaces→hyphens, strip query strings).
 4. **Branch on the `review` flag:**
    - **`review` NOT set (default)** — Save the cleaned markdown to `.raw/articles/[slug]-[YYYY-MM-DD].md` with the frontmatter header below, then continue to step 5.
