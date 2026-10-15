@@ -203,6 +203,26 @@ def gitignored_paths(relpaths) -> set[str]:
     }
 
 
+# State/navigation files and archive folders summarize or retire content Pages;
+# indexing them makes log.md/index.md outrank the pages they summarize. Same
+# exemption set as lint-misplaced-pages.py.
+SKIP_WIKI_DIRS = {"meta", ".reciclaje"}
+SKIP_WIKI_ROOT_FILES = {"index.md", "hot.md", "log.md", "goals.md", "dashboard.md", "overview.md"}
+
+
+def is_excluded_wiki_page(relpath: Path) -> bool:
+    parts = relpath.parts
+    if not parts or parts[0] != "wiki":
+        return False
+    if relpath.name == "_index.md":
+        return True
+    if len(parts) == 2 and parts[1] in SKIP_WIKI_ROOT_FILES:
+        return True
+    if len(parts) >= 3 and parts[1] in SKIP_WIKI_DIRS:
+        return True
+    return False
+
+
 def source_files() -> dict[str, Path]:
     """Collect configured Markdown files, excluding Git metadata and ignored paths."""
     candidates = {}
@@ -213,7 +233,7 @@ def source_files() -> dict[str, Path]:
             if not path.is_file():
                 continue
             relpath = path.relative_to(VAULT_ROOT)
-            if ".git" in relpath.parts:
+            if ".git" in relpath.parts or is_excluded_wiki_page(relpath):
                 continue
             candidates[relpath.as_posix()] = path
     ignored = gitignored_paths(candidates)

@@ -95,6 +95,27 @@ class SourceDirectoriesTest(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("configured source directory not found: missing", stderr.getvalue())
 
+    def test_excludes_wiki_navigation_meta_and_archive_pages(self):
+        self.write_config()
+        for directory in ("wiki/meta", "wiki/.reciclaje", "wiki/concepts"):
+            (self.root / directory).mkdir()
+        for rel in (
+            "wiki/log.md",
+            "wiki/index.md",
+            "wiki/hot.md",
+            "wiki/goals.md",
+            "wiki/dashboard.md",
+            "wiki/overview.md",
+            "wiki/meta/lint-report.md",
+            "wiki/.reciclaje/retired.md",
+            "wiki/concepts/_index.md",
+            "wiki/concepts/real.md",
+        ):
+            (self.root / rel).write_text(markdown(rel), encoding="utf-8")
+
+        search = load_search(self.root)
+        self.assertEqual(set(search.source_files()), {"wiki/wiki.md", "wiki/concepts/real.md"})
+
 
 if __name__ == "__main__":
     unittest.main()
