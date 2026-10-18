@@ -130,7 +130,7 @@ class ConfigTests(VaultCase):
         self.assertNotIn(".md", config.extensions)
         self.assertEqual(config.model, "shared-model")
         self.assertEqual(config.endpoint, "https://embeddings.example/service")
-        self.assertFalse((self.root / ".vault-meta").exists())
+        self.assertFalse((self.root / ".cache").exists())
 
     def test_explicit_root_and_overlapping_directories_are_accepted(self):
         (self.root / "projects" / "src").mkdir()
@@ -158,10 +158,10 @@ class ConfigTests(VaultCase):
 
     def test_source_dir_types_and_unsafe_paths_are_rejected(self):
         for value in (None, [], "projects", [""], [42], [True], ["/tmp"], ["~/projects"],
-                      [".."], ["projects/../wiki"], ["missing"], [".git"], [".vault-meta"]):
+                      [".."], ["projects/../wiki"], ["missing"], [".git"], [".cache"]):
             with self.subTest(value=value), self.assertRaises(CODE.CodeSearchError):
                 self.write_config({"source_dirs": value})
-        self.assertFalse((self.root / ".vault-meta").exists())
+        self.assertFalse((self.root / ".cache").exists())
 
     def test_source_symlink_and_symlink_ancestor_are_rejected(self):
         external = self.external_directory()
@@ -297,8 +297,8 @@ class SelectionTests(GitVaultCase):
         outside = self.external_directory()
         (outside / "secret.py").write_text("outside source\n", encoding="utf-8")
         self.write("projects/keep.py", "safe\n")
-        self.write(".vault-meta/code-search/derived.py", "derived state\n")
-        self.write("projects/.vault-meta/nested.py", "nested derived state\n")
+        self.write(".cache/code-search/derived.py", "derived state\n")
+        self.write("projects/.cache/nested.py", "nested derived state\n")
         self.write(".git/internal.py", "Git metadata\n")
         (self.root / "projects" / "link.py").symlink_to(outside / "secret.py")
         (self.root / "projects" / "linked-directory").symlink_to(outside, target_is_directory=True)
@@ -401,7 +401,7 @@ class EmbeddingTests(VaultCase):
         opener.open.assert_called_once()
         commands.assert_not_called()
         self.assertNotIn("private source", str(caught.exception))
-        self.assertFalse((self.root / ".vault-meta").exists())
+        self.assertFalse((self.root / ".cache").exists())
 
 
 class DependencyTests(VaultCase):
@@ -420,7 +420,7 @@ class DependencyTests(VaultCase):
         self.assertFalse(result["dependencies"]["yaml"]["required"])
         commands.assert_not_called()
         network.assert_not_called()
-        self.assertFalse((self.root / ".vault-meta").exists())
+        self.assertFalse((self.root / ".cache").exists())
 
     def test_missing_yaml_is_required_only_for_yaml_config(self):
         self.write("kb-config.yaml", "code_search:\n  source_dirs: [projects]\n")
@@ -439,7 +439,7 @@ class DependencyTests(VaultCase):
         self.assertTrue(result["ok"])
         self.assertFalse(result["dependencies"]["yaml"]["available"])
         commands.assert_not_called()
-        self.assertFalse((self.root / ".vault-meta").exists())
+        self.assertFalse((self.root / ".cache").exists())
 
     def test_absent_sqlite_module_is_actionable(self):
         with mock.patch.object(CODE, "sqlite3", None), mock.patch.object(CODE.shutil, "which", return_value="git"):
@@ -458,7 +458,7 @@ class DependencyTests(VaultCase):
         self.assertEqual([item["name"] for item in result["missing_dependencies"]], ["git"])
         commands.assert_not_called()
         endpoint.assert_not_called()
-        self.assertFalse((self.root / ".vault-meta").exists())
+        self.assertFalse((self.root / ".cache").exists())
 
 
 class BuildTests(IndexedVaultCase):
@@ -524,7 +524,7 @@ class BuildTests(IndexedVaultCase):
         with mock.patch.object(CODE, "embed_texts", side_effect=CODE.CodeSearchError("endpoint unavailable")):
             with self.assertRaises(CODE.CodeSearchError):
                 CODE.build_index(self.config)
-        self.assertFalse((self.root / ".vault-meta").exists())
+        self.assertFalse((self.root / ".cache").exists())
 
     def test_failure_after_successful_batch_preserves_last_good_database(self):
         self.write("projects/original.py", "old searchable source\n")
@@ -560,7 +560,7 @@ class BuildTests(IndexedVaultCase):
                 mock.patch.object(CODE, "embed_texts", side_effect=[[[1.0, 0.0]], [[1.0, 0.0, 0.0]]]):
             with self.assertRaises(CODE.CodeSearchError):
                 CODE.build_index(self.config)
-        self.assertFalse((self.root / ".vault-meta").exists())
+        self.assertFalse((self.root / ".cache").exists())
 
     def test_sql_failure_rolls_back_relational_and_fts_changes(self):
         self.write("projects/a.py", "original source\n")
@@ -607,15 +607,15 @@ class BuildTests(IndexedVaultCase):
         outside = self.external_directory()
         outside_file = outside / "outside.db"
         outside_file.write_bytes(b"outside unchanged")
-        for name in (".vault-meta", ".vault-meta/code-search", ".vault-meta/code-search/index.db",
-                     ".vault-meta/code-search/index.db-journal"):
+        for name in (".cache", ".cache/code-search", ".cache/code-search/index.db",
+                     ".cache/code-search/index.db-journal"):
             with self.subTest(name=name):
                 case = self.root / ("case-" + name.replace("/", "-"))
                 (case / "projects").mkdir(parents=True)
                 (case / "projects" / "a.py").write_text("source\n", encoding="utf-8")
                 link = case / name
                 link.parent.mkdir(parents=True, exist_ok=True)
-                is_directory = name in (".vault-meta", ".vault-meta/code-search")
+                is_directory = name in (".cache", ".cache/code-search")
                 link.symlink_to(outside if is_directory else outside_file, target_is_directory=is_directory)
                 config = CODE.load_config(case)
                 with mock.patch.object(CODE, "embed_texts") as endpoint, self.assertRaises(CODE.CodeSearchError):
@@ -629,8 +629,8 @@ class BuildTests(IndexedVaultCase):
         before = {path.relative_to(self.root) for path in self.root.rglob("*")}
         self.build()
         created = {path.relative_to(self.root) for path in self.root.rglob("*")} - before
-        self.assertIn(Path(".vault-meta/code-search/index.db"), created)
-        self.assertTrue(all(path == Path(".vault-meta") or path.is_relative_to(".vault-meta/code-search") for path in created))
+        self.assertIn(Path(".cache/code-search/index.db"), created)
+        self.assertTrue(all(path == Path(".cache") or path.is_relative_to(".cache/code-search") for path in created))
 
 
 class QueryStatusTests(IndexedVaultCase):
@@ -722,7 +722,7 @@ class CliTests(IndexedVaultCase):
                     self.assertNotEqual(exit_code, 0)
                     self.assertFalse(result["ok"])
         endpoint.assert_not_called()
-        self.assertFalse((self.root / ".vault-meta").exists())
+        self.assertFalse((self.root / ".cache").exists())
 
     def test_complete_cli_json_interface_and_read_only_doctor(self):
         self.write("projects/a.py", "source handler\n")
@@ -750,7 +750,7 @@ class CliTests(IndexedVaultCase):
                 with self.assertRaises(SystemExit) as exit_code:
                     CODE.main(["--root", str(self.root), "query", "source", "--top", top])
             self.assertEqual(exit_code.exception.code, 2)
-        self.assertFalse((self.root / ".vault-meta").exists())
+        self.assertFalse((self.root / ".cache").exists())
 
     def test_doctor_invalid_source_directory_fails_without_installation(self):
         self.write("kb-config.json", json.dumps({"code_search": {"source_dirs": ["missing"]}}))
@@ -759,7 +759,7 @@ class CliTests(IndexedVaultCase):
         self.assertFalse(result["ok"])
         self.assertTrue(result["errors"])
         self.assertIn("git", result["dependencies"])
-        self.assertFalse((self.root / ".vault-meta").exists())
+        self.assertFalse((self.root / ".cache").exists())
 
 
 if __name__ == "__main__":

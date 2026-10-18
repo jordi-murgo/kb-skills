@@ -2,7 +2,7 @@
 """wiki_search.py — local hybrid (BM25 + vector + RRF) search over the wiki vault.
 
 Subcommands:
-  build          index configured Markdown source directories into .vault-meta/wiki-search/index.db
+  build          index configured Markdown source directories into .cache/wiki-search/index.db
                  (incremental)
   query TEXT     search the index; --mode hybrid|bm25|vector, --top N, --json
   status         index stats and stale pages
@@ -249,7 +249,7 @@ load_env_files(VAULT_ROOT)
 _CFG = load_config_section(VAULT_ROOT, "embeddings")
 SOURCE_DIRS = source_directories(VAULT_ROOT, _CFG)
 _db = _CFG.get("db")
-DEFAULT_DB = vault_path(VAULT_ROOT, _db, "embeddings.db") if _db else VAULT_ROOT / ".vault-meta" / "wiki-search" / "index.db"
+DEFAULT_DB = vault_path(VAULT_ROOT, _db, "embeddings.db") if _db else VAULT_ROOT / ".cache" / "wiki-search" / "index.db"
 DEFAULT_MODEL = _CFG.get("model") or "bge-m3"
 OLLAMA_URL = _CFG.get("endpoint") or "http://127.0.0.1:11434"
 DB_PATH = DEFAULT_DB

@@ -37,7 +37,7 @@ consume copies; changes that benefit every project belong here.
    argparse, re). PyYAML is acceptable only for reading `kb-config.yaml`, with
    the install command in the error message (precedent: `kb-jira-sync`).
 5. **Never write `wiki/**` or `.raw/**`** from tooling. Derived state goes to
-   `.vault-meta/` — it is a cache and must be deletable at any time.
+   `.cache/` — it is a cache and must be deletable at any time.
 
 ## System One decision endpoints (wiki-vetting, wiki-git-ingest)
 
@@ -52,7 +52,7 @@ consume copies; changes that benefit every project belong here.
 
 ## Embeddings (wiki-search)
 
-Index at `.vault-meta/wiki-search/index.db` is derived: deleting it must always be
+Index at `.cache/wiki-search/index.db` is derived: deleting it must always be
 safe. Model/endpoint from env (`WIKI_SEM_MODEL`, `WIKI_SEM_ENDPOINT`, shared
 `WIKI_OLLAMA_URL`) with defaults `bge-m3` at `http://127.0.0.1:11434`. Embedding dimensions read from
 SQLite `meta` come back as **strings** — cast before comparing (this bug

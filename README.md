@@ -20,9 +20,9 @@ kb-skills/
 │   └── scripts/             ← run-lint.py + the five lint-*.py checks
 ├── wiki-fold/  wiki-issues/  wiki-markdown/
 ├── wiki-search/             ← wiki Q&A + hybrid BM25+vector vault search
-│   └── scripts/             ← wiki-search.py; data in .vault-meta/wiki-search/
+│   └── scripts/             ← wiki-search.py; data in .cache/wiki-search/
 ├── code-search/             ← self-contained lexical/vector source search
-│   └── scripts/             ← code-search.py; data in .vault-meta/code-search/
+│   └── scripts/             ← code-search.py; data in .cache/code-search/
 ├── wiki-vetting/            ← claim vetting (System One) + lifecycle audit
 │   └── scripts/
 ├── wiki-sync/               ← stale file-linked claims vs git history
@@ -132,7 +132,7 @@ self-documented there, including which skill consumes it. Copy it to
 |---|---|
 | `project` | name and keywords used to match project content |
 | `embeddings` | `wiki-search` and `code-search` — model, endpoint, semantic source directories, and derived index location |
-| `code_search` | `code-search` — code source directories/extensions; inherits embeddings model/endpoint unless overridden; cache in `.vault-meta/code-search/` |
+| `code_search` | `code-search` — code source directories/extensions; inherits embeddings model/endpoint unless overridden; cache in `.cache/code-search/` |
 | `repos` | `wiki-git-ingest` — native Git remote URLs or an existing local clone |
 | `jira` | `kb-jira-sync` — base URL, project key, output dir |
 | `wiki_publish` | `kb-publish` — wiki repo, branch, VPN precondition |
@@ -173,18 +173,18 @@ shape.
 
 ### Derived state
 
-Indexes, remote mirrors, scan reports and process state live in `.vault-meta/`.
+Indexes, remote mirrors, scan reports and process state live in `.cache/`.
 They are disposable and must not be committed; the directory's `.gitignore`
 sentinel is the one exception, so every clone gets the same policy:
 
 ```gitignore
 # Root .gitignore
-.vault-meta/*
-!.vault-meta/.gitignore
+.cache/*
+!.cache/.gitignore
 ```
 
 ```gitignore
-# .vault-meta/.gitignore
+# .cache/.gitignore
 *
 !.gitignore
 ```
@@ -197,7 +197,7 @@ Use the skill that matches the evidence and decision needed:
 
 | Need | Skill | Boundary |
 |---|---|---|
-| Search configured source trees by text or embedding similarity | `code-search` | `doctor` before build/query; code lives in `.vault-meta/code-search/` |
+| Search configured source trees by text or embedding similarity | `code-search` | `doctor` before build/query; code lives in `.cache/code-search/` |
 | Capture rendered public pages or research a logged-in browser session | `ego-browser-research` | Ego Browser only; explicit user handoff for authentication |
 | Decide whether an external repository, post, article or product is reusable | `vampirize` | Independent source, project-fit and rights analyses; no upstream code in reports |
 

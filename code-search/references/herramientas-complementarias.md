@@ -1,6 +1,6 @@
 # Instalar y usar herramientas complementarias
 
-El motor autocontenido de `code-search` sigue en `.vault-meta/code-search/`. CodeGraph, AST y LSP añaden capacidades distintas; no son requisitos para la búsqueda léxica/vectorial ni se instalan con el script. Su `doctor --json` comprueba Git, SQLite/FTS5, PyYAML cuando corresponde y la configuración básica: **no diagnostica estas cadenas opcionales**.
+El motor autocontenido de `code-search` sigue en `.cache/code-search/`. CodeGraph, AST y LSP añaden capacidades distintas; no son requisitos para la búsqueda léxica/vectorial ni se instalan con el script. Su `doctor --json` comprueba Git, SQLite/FTS5, PyYAML cuando corresponde y la configuración básica: **no diagnostica estas cadenas opcionales**.
 
 ## Elegir la capacidad y obtener consentimiento
 
@@ -81,7 +81,7 @@ Puedes consultar con la CLI sin configurar MCP. Si se autoriza la integración, 
 
 Prefiere la raíz de cada proyecto a un grafo indiscriminado de todo el vault. Elige la ruta con el usuario y explica que `init` **indexa inmediatamente**: no es un registro vacío ni requiere un `build` posterior para comenzar. No fuerces la inicialización del directorio personal o de la raíz del sistema.
 
-Se permite `<proyecto>/.codegraph/` como excepción autorizada a `.vault-meta/code-search/`: contiene datos externos de CodeGraph, no el índice propio del script. No lo versiones. Antes de inicializar, comprueba que el `.gitignore` del repositorio o submódulo elegido incluya:
+Se permite `<proyecto>/.codegraph/` como excepción autorizada a `.cache/code-search/`: contiene datos externos de CodeGraph, no el índice propio del script. No lo versiones. Antes de inicializar, comprueba que el `.gitignore` del repositorio o submódulo elegido incluya:
 
 ```gitignore
 .codegraph/
@@ -154,18 +154,18 @@ Instalar el ejecutable **no registra un servidor en el runtime**. Configura el c
 
 Reserva rutas absolutas bajo el vault, distintas para cada proyecto:
 
-- `<vault-absoluto>/.vault-meta/code-search/lsp/<proyecto>/configuration`
-- `<vault-absoluto>/.vault-meta/code-search/lsp/<proyecto>/workspace`
+- `<vault-absoluto>/.cache/code-search/lsp/<proyecto>/configuration`
+- `<vault-absoluto>/.cache/code-search/lsp/<proyecto>/workspace`
 
 Ejemplo del comando que debe lanzar **el cliente LSP**, no una búsqueda que se ejecuta manualmente:
 
 ```bash
 jdtls \
-  -configuration /ruta/absoluta/al/vault/.vault-meta/code-search/lsp/lambda-cifrado-credenciales/configuration \
-  -data /ruta/absoluta/al/vault/.vault-meta/code-search/lsp/lambda-cifrado-credenciales/workspace
+  -configuration /ruta/absoluta/al/vault/.cache/code-search/lsp/lambda-cifrado-credenciales/configuration \
+  -data /ruta/absoluta/al/vault/.cache/code-search/lsp/lambda-cifrado-credenciales/workspace
 ```
 
-Sustituye la raíz de ejemplo por la ruta real antes de registrar el servidor. `-configuration` aísla el estado de configuración del usuario; `-data` almacena los metadatos del workspace y debe ser único por proyecto. Mantén `.vault-meta/` excluido de Git. Para stdio, el cliente no debe definir variables de conexión por socket como `CLIENT_PORT`/`CLIENT_HOST`.
+Sustituye la raíz de ejemplo por la ruta real antes de registrar el servidor. `-configuration` aísla el estado de configuración del usuario; `-data` almacena los metadatos del workspace y debe ser único por proyecto. Mantén `.cache/` excluido de Git. Para stdio, el cliente no debe definir variables de conexión por socket como `CLIENT_PORT`/`CLIENT_HOST`.
 
 Tras una configuración autorizada, pide al cliente su estado/diagnósticos y comprueba que ha importado el proyecto Maven/Gradle y resuelto las dependencias antes de tratar referencias o tipos como completos. La evidencia debe venir de operaciones LSP de definiciones, referencias o diagnósticos, no de coincidencias textuales. El `doctor` del motor de búsqueda no certifica este registro ni la salud de JDT LS.
 
@@ -177,7 +177,7 @@ OMP lee los servidores de `<cwd>/.omp/lsp.json`. Usa la entrada `servers.jdtls`;
 - Para fijar el JDK solo en el proceso hijo, configura `command: "/usr/bin/env"` y empieza `args` con `JAVA_HOME=<ruta-absoluta-del-JDK-del-servidor>` seguido de la ruta real de `jdtls`. No añadas un campo `env` inexistente al esquema ni cambies el `JAVA_HOME` global.
 - Pasa `--jvm-arg=-Djava.import.generatesMetadataFilesAtProjectRoot=false` a JDT LS. En la versión verificada, esta protección es una propiedad JVM; poner únicamente un setting del cliente no evita metadatos Eclipse en las fuentes.
 - Pasa `-configuration` y `-data` con las rutas absolutas de caché indicadas arriba. Configura `java.autobuild.enabled=false` tanto en `initOptions.settings` como en `settings`, para que llegue antes de importar el proyecto y no compile la aplicación automáticamente.
-- Si se aísla Maven, conserva su configuración editable en `.omp/maven-settings.xml`, fuera de `.vault-meta/`, y apunta `java.configuration.maven.globalSettings` a ella. Su `localRepository` puede estar en `.vault-meta/code-search/lsp/<proyecto>/maven-repository`. Referencia los settings de usuario si son necesarios, sin copiar credenciales ni modificarlos. La caché debe poder borrarse sin perder configuración.
+- Si se aísla Maven, conserva su configuración editable en `.omp/maven-settings.xml`, fuera de `.cache/`, y apunta `java.configuration.maven.globalSettings` a ella. Su `localRepository` puede estar en `.cache/code-search/lsp/<proyecto>/maven-repository`. Referencia los settings de usuario si son necesarios, sin copiar credenciales ni modificarlos. La caché debe poder borrarse sin perder configuración.
 
 Tras guardar, ejecuta la herramienta LSP con `{"action":"reload","file":"*"}`. Verifica una definición entre archivos, referencias reales, resolución de una dependencia y diagnósticos de los archivos de producción. Comprueba que el proyecto importado mantiene su nivel Java original; no cambies el POM ni ejecutes tests/builds Maven como parte de activar el servidor.
 

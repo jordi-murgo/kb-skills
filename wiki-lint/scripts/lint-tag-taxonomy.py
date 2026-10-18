@@ -18,7 +18,7 @@ Equivalent-tag detection (beyond exact vocabulary match):
   surface with an actionable fix instead of a bare violation.
 
 Tag registry: every run refreshes the derived registry at
-.vault-meta/tag-registry.json (per-tag page counts, first/last seen,
+.cache/tag-registry.json (per-tag page counts, first/last seen,
 current off-vocabulary status) — a cache, delete anytime. `--survey` skips
 the gate and prints the live inventory plus candidate equivalences
 (near-duplicate clusters and alias suggestions) for curating
@@ -199,7 +199,7 @@ def collect_page_tags(root: Path) -> list[tuple[Path, str]]:
 
 
 def refresh_registry(root: Path, pairs: list[tuple[Path, str]], allowed_set: set[str], aliases: dict) -> Path:
-    """Write the derived tag registry to .vault-meta/tag-registry.json.
+    """Write the derived tag registry to .cache/tag-registry.json.
     Pure cache: recreated from scratch every run, deletable anytime, never
     holding configuration (kb-config.yaml stays the only source of truth)."""
     today = None
@@ -218,7 +218,7 @@ def refresh_registry(root: Path, pairs: list[tuple[Path, str]], allowed_set: set
         entry["status"] = "allowed" if resolved is not None else "off-vocabulary"
         canon = canonical_equivalent(tag, allowed_set)
         entry["suggested_canonical"] = canon or ""
-    out = root / ".vault-meta" / "tag-registry.json"
+    out = root / ".cache" / "tag-registry.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(registry, indent=2, sort_keys=True, ensure_ascii=False), encoding="utf-8")
     return out
@@ -284,7 +284,7 @@ def main() -> int:
     refresh_registry(root, pairs, allowed_set, aliases)
 
     if survey:
-        print(f"TAG SURVEY — {len(pairs)} tags on {checked} pages, registry written to .vault-meta/tag-registry.json")
+        print(f"TAG SURVEY — {len(pairs)} tags on {checked} pages, registry written to .cache/tag-registry.json")
         from collections import Counter
         counts = Counter(tag for _, tag in pairs)
         print(f"\nInventory ({len(counts)} unique):")
@@ -321,7 +321,7 @@ def main() -> int:
             print(f"  {rel_path} — off-vocabulary tag: {tag}{hint}")
         print(f"\nAllowed vocabulary ({len(allowed)}): {', '.join(allowed)}")
         print("Fix: use an allowed tag (see hints), add tags.aliases, or extend tags.allowed in kb-config.yaml.")
-        print("Registry: .vault-meta/tag-registry.json (survey: --survey)")
+        print("Registry: .cache/tag-registry.json (survey: --survey)")
         return 1
     print(f"OK: all tags on {checked} pages within vocabulary ({len(allowed)} tags, {len(aliases)} aliases)")
     return 0

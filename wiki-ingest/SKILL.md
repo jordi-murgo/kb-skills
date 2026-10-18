@@ -345,12 +345,12 @@ Cite the source for each sourced claim inline, so `wiki-lint` (`lint-citations.p
 
 ## Address Assignment (DragonScale Mechanism 2 MVP)
 
-**Opt-in feature**. DragonScale address assignment runs only if `scripts/allocate-address.py` is present AND `.vault-meta/` exists. Otherwise, skip this entire section and proceed with ingest normally.
+**Opt-in feature**. DragonScale address assignment runs only if `scripts/allocate-address.py` is present AND `.cache/` exists. Otherwise, skip this entire section and proceed with ingest normally.
 
 **Feature detection (run at start of every ingest)**:
 
 ```bash
-if [ -f ./scripts/allocate-address.py ] && [ -d ./.vault-meta ]; then
+if [ -f ./scripts/allocate-address.py ] && [ -d ./.cache ]; then
   DRAGONSCALE_ADDRESSES=1
 else
   DRAGONSCALE_ADDRESSES=0
@@ -375,14 +375,14 @@ Rollout baseline: **2026-04-23** (Phase 2 ship date). Pages with `created:` >= t
 
 ### Required tool: `scripts/allocate-address.py`
 
-Address allocation is delegated to an atomic Python helper. The helper uses `fcntl.flock` on `.vault-meta/.address.lock` to prevent read-use-increment races and recovers the counter by scanning existing frontmatter if the counter file is missing.
+Address allocation is delegated to an atomic Python helper. The helper uses `fcntl.flock` on `.cache/.address.lock` to prevent read-use-increment races and recovers the counter by scanning existing frontmatter if the counter file is missing.
 
 ```bash
 ADDR=$(python3 scripts/allocate-address.py)
 # ADDR is now e.g. "c-000042"; counter is already incremented
 ```
 
-**CRITICAL**: never use the Write or Edit tool on `.vault-meta/address-counter.txt`. That would fire the PostToolUse hook, which runs `git add wiki/ .raw/` and can accidentally commit unrelated pending wiki changes under a generic message. Counter mutation is **only** permitted through the helper script (Bash tool).
+**CRITICAL**: never use the Write or Edit tool on `.cache/address-counter.txt`. That would fire the PostToolUse hook, which runs `git add wiki/ .raw/` and can accidentally commit unrelated pending wiki changes under a generic message. Counter mutation is **only** permitted through the helper script (Bash tool).
 
 ### Helper modes
 

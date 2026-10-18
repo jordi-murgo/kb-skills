@@ -108,7 +108,7 @@ When `/autoresearch` is invoked WITHOUT a topic AND the vault has adopted Dragon
 Feature detection (shell):
 
 ```bash
-if [ -x ./scripts/boundary-score.py ] && [ -d ./.vault-meta ] && command -v python3 >/dev/null 2>&1; then
+if [ -x ./scripts/boundary-score.py ] && [ -d ./.cache ] && command -v python3 >/dev/null 2>&1; then
   BOUNDARY_MODE=1
 else
   BOUNDARY_MODE=0

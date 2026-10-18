@@ -2,7 +2,7 @@
 """Git-aware source search with SQLite FTS5 and Ollama embeddings.
 
 Configuration lives in kb-config.{yaml,yml,json}; derived state lives only in
-.vault-meta/code-search. This script never installs tools or downloads models.
+.cache/code-search. This script never installs tools or downloads models.
 """
 
 import argparse
@@ -47,7 +47,7 @@ RRF_K = 60
 RANK_DEPTH = 200
 MAX_TOP = 100
 SCHEMA_VERSION = "1"
-RESERVED_DIRS = {".git", ".vault-meta"}
+RESERVED_DIRS = {".git", ".cache"}
 MACRO_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^{}]*))?\}")
 INSTALL_HINTS = {
     "git": "Install Git using your OS package manager (macOS: xcode-select --install; "
@@ -86,7 +86,7 @@ class Config:
 
     @property
     def index_path(self):
-        return self.root / ".vault-meta" / "code-search" / "index.db"
+        return self.root / ".cache" / "code-search" / "index.db"
 
 
 def find_root(explicit=None):
@@ -188,7 +188,7 @@ def resolve_source_dirs(root, values):
         if relative.is_absolute() or value.startswith("~") or ".." in relative.parts:
             raise CodeSearchError("source_dirs paths must be vault-relative without ~ or ..")
         if RESERVED_DIRS.intersection(relative.parts):
-            raise CodeSearchError("Git metadata and .vault-meta cannot be source directories")
+            raise CodeSearchError("Git metadata and .cache cannot be source directories")
         directory = root / relative
         check_path(root, directory)
         if not directory.is_dir():

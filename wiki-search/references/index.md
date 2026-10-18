@@ -25,7 +25,7 @@ Config lives in kb-config.yaml `embeddings` section: `model`, `endpoint` (server
 
 Changing the configured `db` path requires an explicit edit to kb-config.yaml; the tool never moves or deletes an existing index. Existing indices are derived and can be rebuilt at any location, so leave any old index in place until you decide to delete it.
 
-Without config: `bge-m3` at `http://127.0.0.1:11434`, index at `.vault-meta/wiki-search/index.db` — disposable derived cache, delete and rebuild anytime (~6 s for a 35-page vault; a full rebuild also happens automatically when the model changes). `WIKI_SEM_NO_FTS5=1` forces the fallback inverted index. `vector` mode needs the embedding endpoint up; `bm25` works offline.
+Without config: `bge-m3` at `http://127.0.0.1:11434`, index at `.cache/wiki-search/index.db` — disposable derived cache, delete and rebuild anytime (~6 s for a 35-page vault; a full rebuild also happens automatically when the model changes). `WIKI_SEM_NO_FTS5=1` forces the fallback inverted index. `vector` mode needs the embedding endpoint up; `bm25` works offline.
 
 ## Query semantics
 
@@ -44,4 +44,4 @@ Default mode `hybrid` fuses BM25 and vector lists with RRF (fusion depth 200) an
 
 - `relevant` holds vault-relative page paths exactly as `query` reports `page`; any path not in the index fails the run instead of silently scoring zero (fix the set or `build`).
 - Chunks collapse to pages at their best-ranked chunk; metrics are binary-relevance hit/recall/precision/nDCG at each `--k`, MRR, and latency p50/p95. `--mode` repeats to compare modes; categories break MRR/recall down per query type.
-- Write questions the way users ask them, not page titles, and mix exact identifiers, paraphrases and cross-language queries. Keep the set outside `.vault-meta/` (it is not derived) and outside `wiki/` (it is not knowledge), e.g. a committed `evals/wiki-search.json` at the vault root. A handful of queries is a smoke test; decide ranking changes on dozens.
+- Write questions the way users ask them, not page titles, and mix exact identifiers, paraphrases and cross-language queries. Keep the set outside `.cache/` (it is not derived) and outside `wiki/` (it is not knowledge), e.g. a committed `evals/wiki-search.json` at the vault root. A handful of queries is a smoke test; decide ranking changes on dozens.

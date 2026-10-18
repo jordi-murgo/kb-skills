@@ -17,7 +17,7 @@ Usa este skill para localizar implementación en los proyectos del vault. Manté
 ## Reglas
 
 - Ejecuta `doctor --json` antes de utilizar el índice. Si devuelve dependencias ausentes, pregunta al usuario si desea instalarlas; presenta los comandos sugeridos y espera autorización. Nunca instales ni descargues modelos automáticamente.
-- Conserva el estado del motor autocontenido en `.vault-meta/code-search/`; la excepción autorizada es el grafo externo de CodeGraph en `<proyecto>/.codegraph/`. No escribas código fuente, `.raw/` ni `wiki/`.
+- Conserva el estado del motor autocontenido en `.cache/code-search/`; la excepción autorizada es el grafo externo de CodeGraph en `<proyecto>/.codegraph/`. No escribas código fuente, `.raw/` ni `wiki/`.
 - Lee alcance, extensiones y endpoint de `kb-config.yaml`, sección `code_search`. Incluye `.` únicamente si se configura explícitamente. Respeta los `.gitignore`, también en submódulos; no sigas enlaces simbólicos.
 - Envía fragmentos solo al endpoint de embeddings configurado. No cambies a un proveedor externo ante un fallo.
 - El índice por líneas no es un grafo de llamadas ni sustituye al análisis de tipos. Inicializa CodeGraph solo tras autorización explícita para el proyecto elegido: `init` construye el grafo, no solo crea metadatos. Excluye `.codegraph/` de Git en cada repositorio o submódulo; no construyas grafos indiscriminados del vault ni inicialices índices externos de `zg`.

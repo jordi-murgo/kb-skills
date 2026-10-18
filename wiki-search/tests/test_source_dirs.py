@@ -59,7 +59,7 @@ class SourceDirectoriesTest(unittest.TestCase):
         self.tempdir.cleanup()
 
     def write_config(self, source_dirs=None):
-        lines = ["embeddings:", "  db: .vault-meta/wiki-search/index.db"]
+        lines = ["embeddings:", "  db: .cache/wiki-search/index.db"]
         if source_dirs is not None:
             lines.append("  source_dirs:")
             lines.extend(f"    - {directory}" for directory in source_dirs)

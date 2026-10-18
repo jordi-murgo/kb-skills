@@ -6,7 +6,7 @@ The watch list lives in the `repos` section of kb-config.yaml at the vault root
 Each value is a git remote URL — the same string git understands in .git/config,
 any forge (ssh 'git@host:group/proj.git', https://..., Azure DevOps, GitLab,
 Bitbucket, ...) — tracked with git itself and your own credentials. A blobless
-bare mirror is cloned once into .vault-meta/remotes/<name>.git and fetched on
+bare mirror is cloned once into .cache/remotes/<name>.git and fetched on
 every scan; new tags (name, date, annotated-tag subject) become claims shaped
 for scripts/wiki_vet.py: {"claim", "quote", "target_page"}.
 
@@ -23,8 +23,8 @@ Optional mapping form adds target_page (default wiki/x-radar/<name>.md):
       path: ../my-spike
 
 `scan` prints what is new since the last run; state advances with --commit,
-without it the scan is dry. Scan state is derived (.vault-meta/repos.json and
-.vault-meta/remotes/: deletable — forces a full rescan/re-clone).
+without it the scan is dry. Scan state is derived (.cache/repos.json and
+.cache/remotes/: deletable — forces a full rescan/re-clone).
 
 Exit codes: 0 ok, 1 repo/git error, 2 usage error.
 """
@@ -54,7 +54,7 @@ def find_vault_root() -> Path:
 
 
 VAULT = find_vault_root()
-STATE_FILE = VAULT / ".vault-meta" / "repos.json"
+STATE_FILE = VAULT / ".cache" / "repos.json"
 CONVENTIONAL = re.compile(r"^(\w+)(?:\([^)]*\))?(!)?:\s+(.+)$")
 VERSION_HEADER = re.compile(r"^##\s+\[?([^\]\s]+)\]?")
 
@@ -221,10 +221,10 @@ def web_source(url: str) -> str:
 
 def scan_remote(repo: dict, state: dict) -> tuple[list[dict], dict]:
     """Track a remote by its git URL with the user's own credentials:
-    blobless bare mirror in .vault-meta/remotes/, fetch + for-each-ref tags."""
+    blobless bare mirror in .cache/remotes/, fetch + for-each-ref tags."""
     url = repo["remote"]
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", repo["name"]).strip("_.") or "repo"
-    mirror = VAULT / ".vault-meta" / "remotes" / f"{safe}.git"
+    mirror = VAULT / ".cache" / "remotes" / f"{safe}.git"
     if (mirror / "HEAD").exists():
         git(str(mirror), "fetch", "--prune", "--tags")
     else:

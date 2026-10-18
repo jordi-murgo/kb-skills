@@ -4,7 +4,7 @@
 Scans wiki/**/*.md for references to repo files, compares each referenced
 file's last commit date with the page's `updated:` frontmatter, and reports
 claims that may be stale. Read-only unless --commit is passed, which records
-the sync point in .vault-meta/sync.json.
+the sync point in .cache/sync.json.
 
 Exit codes: 0 ok, 1 git/scan error, 2 usage error.
 """
@@ -40,7 +40,7 @@ def find_vault_root() -> Path:
 
 VAULT = find_vault_root()
 WIKI = VAULT / "wiki"
-STATE = VAULT / ".vault-meta" / "sync.json"
+STATE = VAULT / ".cache" / "sync.json"
 SKIP_BASENAMES = {"log.md", "hot.md"}
 SKIP_NAMES = {"_index.md"}
 

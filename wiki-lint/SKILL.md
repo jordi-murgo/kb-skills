@@ -56,7 +56,7 @@ Work through these in order:
 11. **Title overlap** (lightweight duplicate pre-filter). Pages whose filename tokens overlap above a Jaccard threshold (`scripts/lint-title-overlap.py`). See the **Title Overlap** section below.
 12. **Bilingual terminology checks** (opt-in). Deterministic and judgment-based checks on DNT-classified pages. See the **Bilingual Terminology Checks** section below.
 13. **Typed relations** (deterministic). Dangling relation targets, unknown relation types, and self-relations in `relations:` frontmatter (`scripts/lint-relations.py`, aggregated into `run-lint.py`). The same script answers graph queries outside the gate: `graph [PAGE]` for adjacency, `reverse PAGE` for typed backlinks.
-14. **Tag vocabulary** (deterministic, opt-in). Page tags outside the fixed vocabulary in kb-config.yaml `tags.allowed` (`scripts/lint-tag-taxonomy.py`, aggregated into `run-lint.py`). Off-vocabulary tags whose normalized form (accents/separators/singular) matches exactly one allowed tag get an actionable hint ("use X or add tags.aliases"); `tags.aliases` maps known variants to canonical tags and passes. Every run refreshes the derived registry `.vault-meta/tag-registry.json` (counts, first/last seen, status); `--survey` prints the live inventory and near-duplicate clusters for curation. Skips with exit 0 when no vocabulary is configured; case-insensitive unless `tags.case_sensitive: true`. Use it to stop drift like `flujo`/`flujos`, `kick-off`/`kickoff` or `diseño`/`diseno` (all observed in vulcano-kb before this check).
+14. **Tag vocabulary** (deterministic, opt-in). Page tags outside the fixed vocabulary in kb-config.yaml `tags.allowed` (`scripts/lint-tag-taxonomy.py`, aggregated into `run-lint.py`). Off-vocabulary tags whose normalized form (accents/separators/singular) matches exactly one allowed tag get an actionable hint ("use X or add tags.aliases"); `tags.aliases` maps known variants to canonical tags and passes. Every run refreshes the derived registry `.cache/tag-registry.json` (counts, first/last seen, status); `--survey` prints the live inventory and near-duplicate clusters for curation. Skips with exit 0 when no vocabulary is configured; case-insensitive unless `tags.case_sensitive: true`. Use it to stop drift like `flujo`/`flujos`, `kick-off`/`kickoff` or `diseño`/`diseno` (all observed in vulcano-kb before this check).
 15. **Misplaced pages** (deterministic, opt-in). Page frontmatter `type:` must be allowed in the page's top-level folder per kb-config.yaml `layout.type_folders` mapping (`scripts/lint-misplaced-pages.py`, aggregated into `run-lint.py`). Exempts `meta/`, `.reciclaje/`, root pages, `_index.md` and the state file names. `layout.require_type: true` (default) also flags non-exempt pages with no `type:`. Skips with exit 0 when no mapping is configured. Catches pages living in the wrong folder, like a `type: source` in `concepts/` or a `type: concept` in `decisiones/` (both observed in real vaults).
 16. **Source citations** (deterministic, error-gated). Validates `^[source]`, `^[source:L1-L2]` and `^[source#L1-L2]` markers in wiki pages (`scripts/lint-citations.py`, aggregated into `run-lint.py`). Errors: cited file missing, malformed marker, reversed or zero-start range. Warnings: range past end of file. Markers inside fenced code are ignored. Cited paths are relative to the vault root, normally under `.raw/`. A citation metrics report (coverage stats over the same markers; not a gate) is available via `scripts/citation-metrics.py`.
 17. **Stale citations** (deterministic, error-gated). A cited source file changed on disk after ingest — its current hash no longer matches the hash recorded in `.raw/.manifest.json` — or the cited file was never ingested (absent from the manifest) (`scripts/lint-stale-citations.py`, aggregated into `run-lint.py`). Re-run the ingest for any flagged source, then re-validate the citations that point at it.
@@ -186,7 +186,7 @@ Add one node per domain page. Connect domains that have significant cross-refere
 **Opt-in feature.** Address Validation runs only if the vault is using DragonScale, detected by:
 
 ```bash
-if [ -f ./scripts/allocate-address.py ] && [ -f ./.vault-meta/address-counter.txt ]; then
+if [ -f ./scripts/allocate-address.py ] && [ -f ./.cache/address-counter.txt ]; then
   DRAGONSCALE_ADDRESSES=1
 else
   DRAGONSCALE_ADDRESSES=0
@@ -197,7 +197,7 @@ When `DRAGONSCALE_ADDRESSES=0`, skip this entire section. Missing `address:` fie
 
 When `DRAGONSCALE_ADDRESSES=1`, proceed with the rollout baseline and checks below.
 
-Rollout baseline: **2026-04-23** (Phase 2 ship date in vaults that adopted DragonScale on that day). Vaults that adopted DragonScale later should override this baseline by setting the earliest `created:` date of any addressed page as their personal rollout date. Record the chosen baseline at the top of `.vault-meta/legacy-pages.txt` as a commented line: `# rollout: YYYY-MM-DD`.
+Rollout baseline: **2026-04-23** (Phase 2 ship date in vaults that adopted DragonScale on that day). Vaults that adopted DragonScale later should override this baseline by setting the earliest `created:` date of any addressed page as their personal rollout date. Record the chosen baseline at the top of `.cache/legacy-pages.txt` as a commented line: `# rollout: YYYY-MM-DD`.
 
 ### Classification rule (applied per page)
 
@@ -209,7 +209,7 @@ Before validating anything, classify the page:
 | **Post-rollout (must have address)** | `type` is not meta/fold AND frontmatter `created:` date is >= 2026-04-23 AND file path is NOT in the legacy baseline manifest. |
 | **Legacy (backfill-eligible)** | `type` is not meta/fold AND frontmatter `created:` date is < 2026-04-23 OR file path IS in the legacy baseline manifest. Address not required until backfill. |
 
-**Legacy baseline manifest**: optional file at `.vault-meta/legacy-pages.txt`, one relative path per line. Pages listed there are treated as legacy regardless of `created:` date. Use this to grandfather pages whose `created:` metadata is wrong or missing.
+**Legacy baseline manifest**: optional file at `.cache/legacy-pages.txt`, one relative path per line. Pages listed there are treated as legacy regardless of `created:` date. Use this to grandfather pages whose `created:` metadata is wrong or missing.
 
 ### Validation checks (run in order)
 
@@ -258,7 +258,7 @@ Lint only observes. Do NOT auto-assign missing addresses during lint. Assignment
 - `.raw/.manifest.json` maps `wiki/foo.md` -> `c-000010` but page frontmatter has `c-000012`. Resolve mismatch.
 
 ### Pending backfill (informational)
-- M legacy pages without addresses. See `.vault-meta/legacy-pages.txt` for the canonical legacy set, or filter by `created:` < 2026-04-23.
+- M legacy pages without addresses. See `.cache/legacy-pages.txt` for the canonical legacy set, or filter by `created:` < 2026-04-23.
 ```
 
 ---
@@ -276,7 +276,7 @@ if [ -x ./scripts/tiling-check.py ] && command -v python3 >/dev/null 2>&1; then
   case $PEEK_EXIT in
     0)  TILING_READY=1 ;;                                  # ready
     2)  TILING_READY=0 ; echo "tiling ERROR: usage error (exit 2); inspect /tmp/tiling-peek.json" ;;
-    3)  TILING_READY=0 ; echo "tiling ERROR: cache corrupt (exit 3); inspect .vault-meta/tiling-cache.json" ;;
+    3)  TILING_READY=0 ; echo "tiling ERROR: cache corrupt (exit 3); inspect .cache/tiling-cache.json" ;;
     4)  TILING_READY=0 ; echo "tiling ERROR: vault exceeds scale hard-fail (exit 4); batching required" ;;
     10) TILING_READY=0 ; echo "tiling skipped: ollama not reachable (exit 10)" ;;
     11) TILING_READY=0 ; echo "tiling skipped: run 'ollama pull nomic-embed-text' to enable (exit 11)" ;;
@@ -319,9 +319,9 @@ If you place a real concept under `wiki/meta/` it will be excluded by path regar
 ### How the helper works
 
 - Computes one embedding per included page via the ollama `nomic-embed-text` model by default.
-- Caches embeddings at `.vault-meta/tiling-cache.json`, keyed on `sha256(model + body)` so model drift auto-invalidates. Frontmatter is not part of the hash or the embedding input — pure frontmatter edits (tag changes, status bumps) do not trigger recomputation.
+- Caches embeddings at `.cache/tiling-cache.json`, keyed on `sha256(model + body)` so model drift auto-invalidates. Frontmatter is not part of the hash or the embedding input — pure frontmatter edits (tag changes, status bumps) do not trigger recomputation.
 - Orphans are GC'd: when a cached page path no longer exists on disk, its entry is dropped on save.
-- Concurrent-safe: exclusive flock on `.vault-meta/.tiling.lock` around cache I/O; per-PID temp file for atomic writes.
+- Concurrent-safe: exclusive flock on `.cache/.tiling.lock` around cache I/O; per-PID temp file for atomic writes.
 
 ### Security posture
 
@@ -341,10 +341,10 @@ If you place a real concept under `wiki/meta/` it will be excluded by path regar
 ### Calibration procedure (manual, one-time per vault)
 
 1. Run the helper with defaults. Capture the **Review** band pairs.
-2. Temporarily lower `bands.review` to `0.70` in `.vault-meta/tiling-thresholds.json` to surface a wider sample. Aim for >=50 pairs spanning 0.70-0.95.
+2. Temporarily lower `bands.review` to `0.70` in `.cache/tiling-thresholds.json` to surface a wider sample. Aim for >=50 pairs spanning 0.70-0.95.
 3. Label each pair: `duplicate`, `similar`, `distinct`.
 4. Pick bands such that: (a) the `error` band contains >= 95% true duplicates; (b) the `review` band captures `similar` pairs without swamping the report with `distinct` ones.
-5. Edit `.vault-meta/tiling-thresholds.json`: set new `bands.error` and `bands.review`, set `calibrated: true`, set `calibration_pairs_labeled` to the label count.
+5. Edit `.cache/tiling-thresholds.json`: set new `bands.error` and `bands.review`, set `calibrated: true`, set `calibration_pairs_labeled` to the label count.
 6. Re-run lint. Report footer now says `calibrated: true`.
 
 ### Scale

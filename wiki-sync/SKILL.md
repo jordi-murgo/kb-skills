@@ -17,7 +17,7 @@ python3 scripts/wiki-sync.py --commit        # report + write the sync point
 python3 scripts/wiki-sync.py --json
 ```
 
-State at `.vault-meta/sync.json`. Read-only for `wiki/**` and `.raw/**`.
+State at `.cache/sync.json`. Read-only for `wiki/**` and `.raw/**`.
 
 ## Workflow
 

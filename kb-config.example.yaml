@@ -93,14 +93,14 @@ embeddings:
   model: ${WIKI_SEM_MODEL:-bge-m3}
   endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
   # Index location (relative to vault root). Derived cache: deletable anytime.
-  db: .vault-meta/wiki-search/index.db
+  db: .cache/wiki-search/index.db
   # Markdown source directories, relative to the vault root. Default: [wiki].
   # Git ignore rules apply. Add "." only to explicitly include the vault root.
   source_dirs:
     - wiki
 
 code_search:
-  # Índice de código independiente, almacenado en .vault-meta/code-search/.
+  # Índice de código independiente, almacenado en .cache/code-search/.
   # Hereda embeddings.model/endpoint; source_dirs NO se hereda de embeddings.
   source_dirs:
     - projects
@@ -119,7 +119,7 @@ repos:
   # Related repos this KB tracks (wiki-git-ingest). Map keyed by name; the
   # value is a git remote URL — exactly what git understands in .git/config,
   # any forge. Tracked with git + YOUR credentials (blobless bare mirror in
-  # .vault-meta/remotes/); new tags become claims. ${VAR} macros work.
+  # .cache/remotes/); new tags become claims. ${VAR} macros work.
   # Scalar form:
   sacra-backend: git@git.gft.com:cybersecurity-practice/sacra/sacra-backend.git
   # Mapping form (adds target_page; default wiki/x-radar/<name>.md):
@@ -138,7 +138,7 @@ repos:
 # form (accents/separators/singular) matches one allowed tag get an
 # actionable hint instead of a bare violation. ${VAR} macros work;
 # case-insensitive by default (set case_sensitive: true to change).
-# Every run refreshes the derived registry .vault-meta/tag-registry.json;
+# Every run refreshes the derived registry .cache/tag-registry.json;
 # `lint-tag-taxonomy.py --survey` prints the inventory + near-duplicate
 # clusters to curate these two keys.
 

@@ -34,10 +34,10 @@ python3 <skill>/scripts/code-search.py --root <vault> doctor --json
 
 ## Datos derivados y cobertura
 
-- Única ubicación de datos propios: `.vault-meta/code-search/index.db`. No contiene configuración editable y se puede eliminar para reconstruir desde el YAML.
-- Asegura que `.vault-meta/` esté en `.gitignore`; no versiones fragmentos ni vectores derivados.
+- Única ubicación de datos propios: `.cache/code-search/index.db`. No contiene configuración editable y se puede eliminar para reconstruir desde el YAML.
+- Asegura que `.cache/` esté en `.gitignore`; no versiones fragmentos ni vectores derivados.
 - Se aplican las reglas Git reales, incluidas negaciones y archivos ya versionados que coincidan con patrones ignorados. Cada repositorio anidado o submódulo usa sus propias reglas Git.
-- Nunca se recorren `.git` ni `.vault-meta`; no se siguen enlaces simbólicos. Se contabilizan los archivos binarios y no UTF-8 omitidos sin mostrar su contenido.
+- Nunca se recorren `.git` ni `.cache`; no se siguen enlaces simbólicos. Se contabilizan los archivos binarios y no UTF-8 omitidos sin mostrar su contenido.
 - Fragmentación por líneas con solapamiento, límite de 80 líneas/4000 caracteres. Las líneas individuales mayores se dividen conservando su número; no es parsing AST.
 - `build` reutiliza los embeddings de archivos cuyo SHA-256 no cambió y retira archivos borrados, ignorados o excluidos por configuración. Cambiar modelo/endpoint exige regenerar vectores. Un fallo del endpoint o de la transacción conserva el último índice válido.
 - `status` compara la configuración y el contenido actual con el índice. Consulta `files`, `chunks`, `embedded`, `dimensions`, `new_paths`, `stale_paths` y `needs_build`.
@@ -50,7 +50,7 @@ Ante una dependencia ausente, el agente debe preguntar: «Falta <dependencia>. �
 
 Si el endpoint no está disponible, corrige la configuración o pregunta antes de habilitar un servicio. No hagas `ollama pull`, no descargues modelos y no cambies de proveedor por tu cuenta. BM25 puede consultar un índice ya construido sin endpoint; construir un índice vectorial sí lo requiere.
 
-LSP, AST y CodeGraph son complementos opcionales: el script no los instala y `doctor` no diagnostica sus cadenas de herramientas; comprueba las dependencias básicas Git, SQLite/FTS5 y PyYAML cuando corresponde, además de la configuración. Consulta CodeGraph si ya está disponible e indexado; si no, solicita autorización explícita antes de instalarlo, modificar permisos MCP o ejecutar `init` para el proyecto elegido. `init` crea y construye el grafo externo en `<proyecto>/.codegraph/`, excepción autorizada al estado del motor en `.vault-meta/code-search/`; exige excluirlo de Git en cada repositorio o submódulo. No construyas grafos indiscriminados del vault. Consulta [instalación y uso de herramientas complementarias](herramientas-complementarias.md).
+LSP, AST y CodeGraph son complementos opcionales: el script no los instala y `doctor` no diagnostica sus cadenas de herramientas; comprueba las dependencias básicas Git, SQLite/FTS5 y PyYAML cuando corresponde, además de la configuración. Consulta CodeGraph si ya está disponible e indexado; si no, solicita autorización explícita antes de instalarlo, modificar permisos MCP o ejecutar `init` para el proyecto elegido. `init` crea y construye el grafo externo en `<proyecto>/.codegraph/`, excepción autorizada al estado del motor en `.cache/code-search/`; exige excluirlo de Git en cada repositorio o submódulo. No construyas grafos indiscriminados del vault. Consulta [instalación y uso de herramientas complementarias](herramientas-complementarias.md).
 
 ## Registro local
 

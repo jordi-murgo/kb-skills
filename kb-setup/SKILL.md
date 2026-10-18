@@ -85,15 +85,15 @@ URLs, every custom field. Keep it out of the repo:
 .cache/
 ```
 
-### `.vault-meta/`: derived state, tracked policy
+### `.cache/`: derived state, tracked policy
 
 Create this directory before any skill builds an index, mirror, scan state, or
 report. It is an entirely disposable local cache, but its **ignore policy** must
 travel with the vault:
 
 ```bash
-mkdir -p .vault-meta
-cat > .vault-meta/.gitignore <<'EOF'
+mkdir -p .cache
+cat > .cache/.gitignore <<'EOF'
 # Derived vault state is local and may be deleted at any time.
 # Keep only this sentinel tracked; ignore caches, indexes, mirrors, logs and PID files.
 *
@@ -101,20 +101,20 @@ cat > .vault-meta/.gitignore <<'EOF'
 EOF
 ```
 
-Do **not** ignore `.vault-meta/` outright in the root `.gitignore`: Git then
+Do **not** ignore `.cache/` outright in the root `.gitignore`: Git then
 will not descend into the directory, so it cannot track the sentinel. If an
 older vault has that rule, replace it with:
 
 ```gitignore
-.vault-meta/*
-!.vault-meta/.gitignore
+.cache/*
+!.cache/.gitignore
 ```
 
 Prove both halves before committing:
 
 ```bash
-git check-ignore -q --no-index .vault-meta/index.db
-! git check-ignore -q --no-index .vault-meta/.gitignore
+git check-ignore -q --no-index .cache/index.db
+! git check-ignore -q --no-index .cache/.gitignore
 ```
 
 ## 3. Naming
@@ -333,7 +333,7 @@ m365:
 embeddings:
   model: ${WIKI_SEM_MODEL:-bge-m3}
   endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
-  db: .vault-meta/wiki-search/index.db
+  db: .cache/wiki-search/index.db
   source_dirs:
     - wiki
 
@@ -355,7 +355,7 @@ Git-ignored Markdown is excluded and a missing configured directory makes
 
 `code_search` indexa código y configuración, no Markdown por defecto. Admite
 `source_dirs`, `extensions`, `model` y `endpoint`; modelo y endpoint heredan
-`embeddings` si se omiten. Todos sus datos van a `.vault-meta/code-search/`.
+`embeddings` si se omiten. Todos sus datos van a `.cache/code-search/`.
 Respeta las reglas Git de cada submódulo. Instala el skill completo y ejecuta
 `python3 .agents/skills/code-search/scripts/code-search.py doctor --json`;
 si faltan dependencias, pregunta al usuario antes de instalarlas. No descarga
