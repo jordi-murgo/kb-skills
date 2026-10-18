@@ -1,6 +1,6 @@
 ---
 name: wiki-ingest
-description: "Ingest sources into the wiki vault. Reads a source, extracts entities and concepts, creates or updates wiki pages, cross-references, and logs the operation. Supports files, URLs, and batch mode. Optional `review` flag adds a pre-ingest human-in-the-loop gate that flags doubtful URL content (ads, nav, off-topic) with annotated recommendations before writing to .raw/. Triggers on: ingest, process this source, add this to the wiki, read and file this, batch ingest, ingest all of these, ingest this url."
+description: "Ingest sources into the wiki vault. Reads a source, extracts entities and concepts, creates or updates wiki pages, cross-references, and logs the operation. Supports files, URLs, and batch mode. Optional `review` flag adds a pre-ingest human-in-the-loop gate that flags doubtful URL content (ads, nav, off-topic) with annotated recommendations before writing to .raw/. After writing, runs a semantic verification pass (wiki-search retrieval + System One judgment) that flags contradictions, duplicates and missing cross-references against existing pages. Triggers on: ingest, process this source, add this to the wiki, read and file this, batch ingest, ingest all of these, ingest this url."
 argument-hint: "[file-or-url] [review] [force]"
 ---
 
@@ -188,7 +188,7 @@ Steps:
     - Pages updated: [[Page 3]], [[Page 4]]
     - Key insight: One sentence on what is new.
     ```
-12. **Check for contradictions.** If new info conflicts with existing pages, add `> [!contradiction]` callouts on both pages.
+12. **Verify semantically.** Run the *Post-Creation Verification* pass below: search each new claim against the rest of the vault (wiki-search) and flag conflicts with `> [!contradiction]` callouts on both pages.
 13. **Refresh** `wiki/dashboard.md` from `wiki/goals.md` and the changed evidence before reporting completion; preserve manual notes and existing goal rows, no invented objectives or progress.
 
 ---
@@ -201,7 +201,7 @@ Steps:
 
 1. List all files to process. Confirm with user before starting.
 2. Process each source following the single ingest flow. Defer cross-referencing between sources until step 3.
-3. After all sources: do a cross-reference pass. Look for connections between the newly ingested sources.
+3. After all sources: do a cross-reference pass. Run the *Post-Creation Verification* pass below (claims from all new/updated pages at once), then look for connections between the newly ingested sources.
 4. Update index, hot cache, log, and `wiki/dashboard.md` once per changed batch at the end (not per-source), then report once.
 5. Report: "Processed N sources. Created X pages, updated Y pages. Here are the key connections I found."
 
@@ -295,6 +295,29 @@ On the new source summary, reference it:
 ```
 
 Do not silently overwrite old claims. Flag and let the user decide.
+
+---
+
+## Post-Creation Verification (semantic)
+
+After pages are written (single-source step 12, or the batch cross-reference pass), verify the new content against the rest of the vault with retrieval, not memory. This is the judgment layer on top of the deterministic lint gates: verdicts land in the existing conventions (contradiction callouts, typed relations, cross-links), which `wiki-lint` then enforces.
+
+Procedure:
+
+1. **Refresh the index** — the pass is only as good as the index: `python3 .agents/skills/wiki-search/scripts/wiki-search.py build` (incremental, sub-second on small vaults). This is the one point where wiki-ingest triggers a build: the verification reads the index, so it must be current.
+2. **Extract claims** from each page this ingest created or updated: atomic factual assertions, each with a verbatim quote from the page (wiki-vetting extraction pattern). Skip navigation text, frontmatter and passages the ingest did not write.
+3. **Search per claim**: `wiki-search.py query "<claim>" --top 8 --mode hybrid --json`. Drop hits from the page itself and from `wiki/meta/**`.
+4. **Judge the pairs**: for each (claim, hit) pair with real topical overlap, classify via the wiki-vetting System One contract: `contradicts` / `duplicates` / `extends` / `distinct`. Hard rules from wiki-vetting apply: `questions` is a record keyed by id; each instruction names the claim and quotes the evidence chunk; ≤16 claims per request; states ≤6k tokens (iGPU prefill ~1.4 s per 1k tokens).
+5. **Apply verdicts** (in the ingest session, not in a read-only subagent):
+   - `contradicts` → add the `[!contradiction]` callouts on both pages (see Contradictions above) plus a typed relation `contradicts` in frontmatter. Never silently overwrite the old claim.
+   - `duplicates` → merge into the stronger page and redirect links, or record why both stay. An ingest that created a duplicate means the pre-creation duplicate check missed; treat it as a defect, not a nuance.
+   - `extends` → add the missing wikilink so the pages reference each other.
+   - `distinct` → nothing to do.
+6. **Report** verdicts with the search evidence. Unresolved contradictions stay flagged — the lint gates keep failing until resolved, and that is intended.
+
+Steps 2–4 are read-only and MAY be dispatched to a review subagent; subagents MUST NOT call the address allocator or write pages (see Address Assignment). Verdict application (step 5) happens in the main ingest session.
+
+Budget guardrails: verify only pages this ingest created or updated — never the whole vault; extract only claims that assert something (typically 3–8 per page); one round only, no re-verification of pages you just edited.
 
 ---
 
