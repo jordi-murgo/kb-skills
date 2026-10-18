@@ -298,6 +298,19 @@ Do not silently overwrite old claims. Flag and let the user decide.
 
 ---
 
+## Source Citations
+
+Cite the source for each sourced claim inline, so `wiki-lint` (`lint-citations.py`) can validate it:
+
+- Whole source: `^[.raw/articles/filename.md]`
+- Line range: `^[.raw/articles/filename.md:42-58]` (or `#L42-L58`)
+- Paths are relative to the vault root. Cite the file actually written under `.raw/`, not a temp copy.
+- Put the marker at the end of the sentence or bullet it supports. Do not put markers inside fenced code.
+- Only cite line ranges you have read in the `.raw/` file. Do not guess line numbers.
+- Cited sources must be tracked in `.raw/.manifest.json` with their hash recorded at ingest time (see Delta Tracking). The stale-citations gate in `wiki-lint` (`lint-stale-citations.py`) flags pages citing sources whose file changed on disk after ingest or that were never recorded — on a hash change, re-run ingest for that source, then re-validate the citations pointing at it.
+
+---
+
 ## What Not to Do
 
 - **Source files under `.raw/` are immutable.** Do not modify the files that users drop there (articles, transcripts, images). The `.raw/.manifest.json` delta tracker and its `address_map` (DragonScale Mechanism 2) are the only files under `.raw/` that `wiki-ingest` itself maintains. Treat every other file under `.raw/` as read-only source content.
