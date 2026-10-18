@@ -82,8 +82,10 @@ def main():
     files_scanned = 0
     
     for md_file in sorted(glob.glob(f"{wiki_root}/wiki/**/*.md", recursive=True)):
-        files_scanned += 1
         rel_path = os.path.relpath(md_file, wiki_root)
+        if rel_path.startswith(f"wiki{os.sep}meta{os.sep}lint-report"):
+            continue  # lint reports quote links verbatim; scanning them self-pollutes
+        files_scanned += 1
         content = Path(md_file).read_text(encoding="utf-8", errors="replace")
         links = extract_wikilinks(content)
         
