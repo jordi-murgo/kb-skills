@@ -126,6 +126,31 @@ CLAIMS_PER_REQUEST = 16
 MAX_BODY_BYTES = 60 * 1024
 DIMS = ("grounded", "durable", "duplicate", "sensitive")
 
+# Per-axis thresholds. A single 0.5 cut for every axis is what the JevAgentHarness
+# paper identifies as the cause of a 19-point success loss: delegation without a
+# fitted threshold is worse than not delegating. The axes are also asymmetric on
+# purpose — letting a secret through costs more than losing a page, so `sensitive`
+# rejects low while `grounded` demands strong support.
+#
+# MEASURED LIMIT (clef-flash:9b, 23 labelled cases, 2026-10-19): the `grounded`
+# axis does not separate support from non-support. Unsupported quotes scored
+# 0.47–0.93 and supported ones 0.59–0.96 — overlapping distributions. Raising the
+# cut to 0.90 reaches a 10% false-positive rate at the cost of 40% of real claims.
+# The threshold is therefore a *recall/precision dial*, not a fix: an agent must
+# never treat `accept` on this axis as proof that the quote supports the claim.
+# Run scripts/calibration.py after any model change and read the overlap.
+DEFAULT_THRESHOLDS = {
+    "grounded": 0.90,   # quote must explicitly support the claim
+    "durable": 0.60,    # stable fact vs transient note
+    "duplicate": 0.75,  # index coverage
+    "sensitive": 0.30,  # low bar: prefer over-flagging secrets
+}
+# When a probability lands inside the band around its threshold, the axis is not
+# decided: the verdict drops to `review` instead of collapsing to a bit. The band
+# stays narrow on purpose — at ±0.10 against a 0.90 `grounded` threshold nothing
+# could ever be accepted.
+DEFAULT_BAND = 0.05
+
 INSTRUCTIONS = {
     "grounded": (
         "Decide whether the verbatim quote directly supports the claim's full "
@@ -161,6 +186,38 @@ INSTRUCTIONS = {
         "Contains no secret, credential, or personal data.",
     ),
 }
+
+
+def resolve_thresholds(cfg):
+    """Merge kb-config decisions.thresholds over DEFAULT_THRESHOLDS.
+
+    Accepts a mapping per axis and an optional `band` for the uncertainty window.
+    Unknown axes or out-of-range values fail loudly: a typo silently reverting to
+    the default would recreate the calibration bug this replaced.
+    """
+    raw = cfg.get("thresholds") or {}
+    if not isinstance(raw, dict):
+        raise SystemExit("error: decisions.thresholds must be a mapping")
+    thresholds = dict(DEFAULT_THRESHOLDS)
+    band = DEFAULT_BAND
+    for key, value in raw.items():
+        if key == "band":
+            band = value
+            continue
+        if key not in DIMS:
+            raise SystemExit(
+                f"error: decisions.thresholds has unknown axis '{key}' (expected one of {', '.join(DIMS)} or band)"
+            )
+        thresholds[key] = value
+    for key, value in thresholds.items():
+        if not isinstance(value, (int, float)) or not 0 < float(value) < 1:
+            raise SystemExit(
+                f"error: decisions.thresholds.{key} must be a number between 0 and 1, got {value!r}"
+            )
+        thresholds[key] = float(value)
+    if not isinstance(band, (int, float)) or not 0 <= float(band) < 0.5:
+        raise SystemExit(f"error: decisions.thresholds.band must be a number in [0, 0.5), got {band!r}")
+    return thresholds, float(band)
 
 
 def parse_args(argv):
@@ -317,19 +374,51 @@ def call_systemone(endpoint, payload, question_ids):
     raise SystemExit(f"error: systemone call failed after retry: {last_error}")
 
 
-def verdict_for(probs, skip_grounded=False):
-    bits = {dim: probs.get(dim, 1.0 if (dim == "grounded" and skip_grounded) else 0.0) >= 0.5 for dim in DIMS}
-    if bits["sensitive"] or not bits["grounded"]:
+def verdict_for(probs, thresholds=None, band=DEFAULT_BAND, skip_grounded=False):
+    """Turn per-axis probabilities into a verdict plus the uncertainty it carries.
+
+    Each axis is compared against its own threshold. If a probability sits inside
+    `band` of its threshold the axis is undecided, and the claim goes to `review`
+    rather than being forced into a bit — that is where the previous 0.5 cut lost
+    the signal that would have caught the bad acceptances.
+    """
+    thresholds = thresholds or DEFAULT_THRESHOLDS
+    bits = {}
+    undecided = []
+    for dim in DIMS:
+        if dim == "grounded" and skip_grounded:
+            bits[dim] = True
+            continue
+        prob = probs.get(dim)
+        if prob is None:
+            bits[dim] = False
+            undecided.append(dim)
+            continue
+        limit = thresholds[dim]
+        bits[dim] = prob >= limit
+        if abs(prob - limit) < band:
+            undecided.append(dim)
+
+    if bits["sensitive"]:
+        verdict = "reject"
+    elif undecided:
+        verdict = "review"
+    elif not bits["grounded"]:
         verdict = "reject"
     elif bits["durable"] and not bits["duplicate"]:
         verdict = "accept"
     else:
         verdict = "review"
-    return verdict, bits
+
+    # Distance to the nearest decision boundary, 0 = right on the edge.
+    decided = [abs(probs[d] - thresholds[d]) for d in DIMS if d in probs]
+    confidence = round(min(decided), 3) if decided else 0.0
+    return verdict, bits, {"undecided_axes": undecided, "confidence": confidence}
 
 
 def main(argv=None):
     args = parse_args(argv)
+    thresholds, band = resolve_thresholds(_CFG)
     source = open(args.claims, encoding="utf-8") if args.claims else sys.stdin
     with source:
         claims = load_claims(source)
@@ -343,7 +432,9 @@ def main(argv=None):
             cid = f"c{base_index + offset}"
             skip = bool(claim.get("skip_grounded"))
             probs = {dim: answers[f"{cid}_{dim}"] for dim in DIMS if not (dim == "grounded" and skip)}
-            verdict, bits = verdict_for(probs, skip_grounded=skip)
+            verdict, bits, signal = verdict_for(
+                probs, thresholds=thresholds, band=band, skip_grounded=skip
+            )
             results.append(
                 {
                     "claim": claim["claim"],
@@ -353,6 +444,7 @@ def main(argv=None):
                     "probabilities": probs,
                     "bits": bits,
                     "verdict": verdict,
+                    **signal,
                 }
             )
 
@@ -363,6 +455,8 @@ def main(argv=None):
                 {
                     "model": args.model,
                     "endpoint": args.endpoint,
+                    "thresholds": thresholds,
+                    "band": band,
                     "counts": counts,
                     "verdicts": results,
                 },
@@ -372,7 +466,10 @@ def main(argv=None):
         )
         return 0
 
-    header = f"{'#':>2}  {'VERDICT':<7}  {'grounded':>8}  {'durable':>8}  {'duplicate':>9}  {'sensitive':>9}  claim"
+    header = (
+        f"{'#':>2}  {'VERDICT':<7}  {'conf':>5}  {'grounded':>8}  {'durable':>8}  "
+        f"{'duplicate':>9}  {'sensitive':>9}  claim"
+    )
     print(header)
     print("-" * len(header))
     for i, r in enumerate(results, 1):
@@ -380,12 +477,17 @@ def main(argv=None):
         claim = r["claim"] if len(r["claim"]) <= 60 else r["claim"][:57] + "..."
         grounded = f"{p['grounded']:>8.2f}" if "grounded" in p else f"{'skip':>8}"
         print(
-            f"{i:>2}  {r['verdict']:<7}  {grounded}  {p['durable']:>8.2f} "
+            f"{i:>2}  {r['verdict']:<7}  {r['confidence']:>5.2f}  {grounded}  {p['durable']:>8.2f} "
             f"  {p['duplicate']:>9.2f}  {p['sensitive']:>9.2f}  {claim}"
         )
     print(
         f"\nSummary: {counts['accept']} accept, {counts['review']} review, "
         f"{counts['reject']} reject ({len(results)} claims, model={args.model})"
+    )
+    print(
+        "Thresholds: "
+        + ", ".join(f"{dim}={thresholds[dim]:.2f}" for dim in DIMS)
+        + f" (band ±{band:.2f}; undecided axes force review)"
     )
     return 0
 

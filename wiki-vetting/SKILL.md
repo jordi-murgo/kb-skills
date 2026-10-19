@@ -6,21 +6,28 @@ argument-hint: "--claims claims.json | audit"
 
 # wiki-vetting: Claim Vetting and Lifecycle Audit
 
-A gate between "we read it" and "the wiki says it". Claims are scored by a local `/v1/systemone` decision endpoint (noul questions, bit rule p>=0.5); the audit pass is pure static analysis, offline.
+A gate between "we read it" and "the wiki says it". Claims are scored by a local `/v1/systemone` decision endpoint (noul questions, per-axis thresholds); the audit pass is pure static analysis, offline.
 
 ## Commands
 
 ```bash
 python3 scripts/wiki-vet.py --claims claims.json [--json] [--model M] [--endpoint URL]
+python3 scripts/calibration.py --set tests/calibration-set.json   # measure before trusting
 python3 scripts/wiki-lifecycle.py [--json]
 ```
 
-Input: JSON array of `{"claim", "quote", "target_page", "source", "skip_grounded"}`. Verdicts: `accept` (write it), `reject` (ungrounded or sensitive — drop or sanitize and re-vet), `review` (human decides). Config in kb-config.yaml `decisions` section: `model` (default `clef-flash:9b`) and `endpoint` (server base URL; `/v1/systemone` appended); `${VAR}` macros expand from the environment incl. vault-root `.env`/`.env.local` (`.env.example`). CLI flags beat config.
+Input: JSON array of `{"claim", "quote", "target_page", "source", "skip_grounded"}`. Verdicts: `accept` (write it), `reject` (ungrounded or sensitive — drop or sanitize and re-vet), `review` (human decides, or an axis landed inside its uncertainty band). Config in kb-config.yaml `decisions`: `model` (default `clef-flash:9b`), `endpoint` (server base URL; `/v1/systemone` appended) and `thresholds` (per-axis cuts plus `band`). `${VAR}` macros expand from the environment incl. vault-root `.env`/`.env.local` (`.env.example`). CLI flags beat config.
+
+## Thresholds are a dial, not a fix
+
+Each axis has its own threshold because they differ in cost: `sensitive` rejects at 0.30 (over-flagging a secret is cheap, missing one is not), `grounded` demands 0.90. A probability inside `band` of its threshold marks the axis *undecided* and forces `review` — the verdict carries `confidence` and `undecided_axes` so the caller sees how close the call was.
+
+**Measured limit (clef-flash:9b, 23 labelled cases, 2026-10-19):** the `grounded` axis does **not** reliably separate a supporting quote from an adjacent-but-wrong one. Unsupported quotes scored 0.47–0.93; supported ones 0.59–0.96. At 0.90 the false-positive rate is 10% but only 60% of real claims pass. Do not treat `accept` as proof the quote supports the claim; read the probability and the source. Re-run `calibration.py` after any model or prompt change and compare the overlap, not just the aggregate.
 
 ## Workflow
 
 1. Extract atomic claims, each with a verbatim quote that proves it.
-2. Vet; read the probabilities, not just the verdicts.
+2. Vet; read the probabilities and `undecided_axes`, not just the verdicts.
 3. `accept` → write with `status: verified` and `evidence:` in frontmatter. `review` → `status: developing` or hold.
 4. `reject` (sensitive) → never enters the vault; strip the secret, re-vet.
 

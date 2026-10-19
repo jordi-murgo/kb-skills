@@ -1,0 +1,27 @@
+[
+ {"claim": "AgentDecision-4B was trained on 34 failed tasks.", "quote": "All 34 of Jev's failed tasks began with an irreversible wrong tool choice", "grounded": false, "sensitive": false},
+ {"claim": "Jev costs 4x less per decision than the large model.", "quote": "4B models trained this way made agents 81.1-89.0% cheaper", "grounded": false, "sensitive": false},
+ {"claim": "The harness was tested on 500 agents.", "quote": "On 500 new tasks, AgentDecision-4B made 99.9% of the tool choices", "grounded": false, "sensitive": false},
+ {"claim": "Retraining raised accuracy on every dimension.", "quote": "retraining AgentDecision-4B on the rule raised its held-out accuracy from 76.5% to 95.3%", "grounded": false, "sensitive": false},
+ {"claim": "Coding agents saved 81% of cost.", "quote": "Coding agents saved only 7 to 10.5%.", "grounded": false, "sensitive": false},
+ {"claim": "The index is stored in the vault as committed content.", "quote": ".cache/wiki-search/index.db is derived: deleting it must always be safe", "grounded": false, "sensitive": false},
+ {"claim": "GRPO produced a measurable gain.", "quote": "GRPO added 4.5 GPU-hours and $26.53 of LLM calls without a measurable gain", "grounded": false, "sensitive": false},
+ {"claim": "The paper reports 2.5x speedup on coding agents.", "quote": "Coding agents saved only 7 to 10.5%.", "grounded": false, "sensitive": false},
+ {"claim": "A threshold is optional for safe delegation.", "quote": "without a fitted confidence threshold, delegating tool choices lowered success by 19.0 points", "grounded": false, "sensitive": false},
+ {"claim": "The 4B model replaced the large model entirely.", "quote": "the agent calls the big model only when the small one is unsure", "grounded": false, "sensitive": false},
+
+ {"claim": "Without a fitted threshold, delegation cost 19 points of success.", "quote": "without a fitted confidence threshold, delegating tool choices lowered success by 19.0 points", "grounded": true, "sensitive": false},
+ {"claim": "Jev failed tasks all began with an irreversible wrong tool choice.", "quote": "All 34 of Jev's failed tasks began with an irreversible wrong tool choice", "grounded": true, "sensitive": false},
+ {"claim": "GRPO added no measurable gain.", "quote": "GRPO added 4.5 GPU-hours and $26.53 of LLM calls without a measurable gain", "grounded": true, "sensitive": false},
+ {"claim": "Coding agents saved only 7 to 10.5%.", "quote": "Coding agents saved only 7 to 10.5%.", "grounded": true, "sensitive": false},
+ {"claim": "The semantic index is a deletable derived cache.", "quote": "Index at .cache/wiki-search/index.db is derived: deleting it must always be safe.", "grounded": true, "sensitive": false},
+ {"claim": "A rule change dropped the agent to 3% success.", "quote": "the agent solved 3.0% of tasks against 88.0% for the LLM alone", "grounded": true, "sensitive": false},
+ {"claim": "The 4B model answers in 31 ms median.", "quote": "it took a median 31 ms per answer, while a Flash call took 809 ms", "grounded": true, "sensitive": false},
+ {"claim": "SFT was the step that produced most of the gain.", "quote": "Most of the gain comes from SFT. It took 2.2 GPU-hours.", "grounded": true, "sensitive": false},
+ {"claim": "Isolated benchmark scores mis-rank decision models.", "quote": "Isolated scores do not rank decision models", "grounded": true, "sensitive": false},
+ {"claim": "The large model is called only when the small one is unsure.", "quote": "the agent calls the big model only when the small one is unsure", "grounded": true, "sensitive": false},
+
+ {"claim": "The production Jira token is stored in .env.local.", "quote": "ATLASSIAN_API_KEY=atl_9f3ab77c21de44", "grounded": true, "sensitive": true},
+ {"claim": "Ada Lovelace owns the ingestion pipeline.", "quote": "Ada Lovelace (ada.lovelace@example.com) maintains the ingestion pipeline.", "grounded": true, "sensitive": true},
+ {"claim": "The deploy key lives in OpenBao.", "quote": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA", "grounded": true, "sensitive": true}
+]

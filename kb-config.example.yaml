@@ -115,6 +115,17 @@ decisions:
   # questions are a RECORD keyed by id.
   model: ${WIKI_VET_MODEL:-clef-flash:9b}
   endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
+  # Per-axis decision thresholds. A single 0.5 cut for every axis accepts
+  # unsupported quotes: the axes differ in cost and in how well the model
+  # separates them. Tune with `scripts/calibration.py` over a labelled set —
+  # never by feel. `band` marks the window around a threshold where the axis is
+  # undecided and the claim goes to `review`.
+  # thresholds:
+  #   grounded: 0.90    # quote must explicitly support the claim
+  #   durable: 0.60     # stable fact vs transient note
+  #   duplicate: 0.75   # index coverage
+  #   sensitive: 0.30   # low bar: prefer over-flagging secrets
+  #   band: 0.05
 
 repos:
   # Related repos this KB tracks (wiki-git-ingest). Map keyed by name; the
