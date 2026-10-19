@@ -29,7 +29,7 @@ Without config: `bge-m3` at `http://127.0.0.1:11434`, index at `.cache/wiki-sear
 
 ## Query semantics
 
-Default mode `hybrid` fuses BM25 and vector lists with RRF (fusion depth 200) and falls back to whichever list is non-empty. The FTS5 backend matches all query terms (AND), so natural-language questions often have no BM25 hits and `hybrid` then ranks by vector alone — measured on vulcano-kb in 5 of 7 smoke queries. `query --json` reports `bm25_rank`/`vector_rank` per hit, and `eval` counts these fallbacks. A query `--model` override differing from the index model warns that cosine scores may be meaningless; a model change forces full re-embedding on the next build. Empty query text and `--top < 1` are rejected.
+Default mode `hybrid` fuses the complete BM25 and vector lists with RRF (no top-L cutoff: truncated fusion is a different ranking, not a cheaper one — see arXiv:2608.07152) and falls back to whichever list is non-empty. The FTS5 backend matches all query terms (AND), so natural-language questions often have no BM25 hits and `hybrid` then ranks by vector alone — measured on vulcano-kb in 5 of 7 smoke queries. `query --json` reports `bm25_rank`/`vector_rank` per hit, and `eval` counts these fallbacks. A query `--model` override differing from the index model warns that cosine scores may be meaningless; a model change forces full re-embedding on the next build. Empty query text and `--top < 1` are rejected.
 
 ## Retrieval evaluation
 

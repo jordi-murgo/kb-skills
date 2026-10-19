@@ -274,7 +274,15 @@ MAX_CHUNK_CHARS = 4000
 BM25_K1 = 1.5
 BM25_B = 0.75
 RRF_K = 60
-FUSION_DEPTH = 200
+# None fuses the complete channel lists. Any finite value truncates, and
+# truncated RRF is NOT the same ranking as complete-list RRF: unread cross-list
+# ranks can change top-K membership even when every complete-list top-K item is
+# already observed (arXiv:2608.07152). Measured on the 35-query vulcano gold set
+# (2026-10-19): a cutoff of 200 changed 1 query's top-10, 500 changed none, and
+# latency was flat (p50 44ms at 200 vs 42ms complete) because vector_rank scores
+# every chunk before slicing anyway. Reintroduce a depth only with a measured
+# win on a real gold set, and never below the corpus size.
+FUSION_DEPTH = None
 
 
 # ---------------------------------------------------------------- chunking
@@ -506,6 +514,11 @@ def normalize(vec):
 # ---------------------------------------------------------------- ranking
 
 
+def apply_limit(rows, limit):
+    """Slice a ranking, or leave it whole when `limit` is None (no truncation)."""
+    return rows if limit is None else rows[:limit]
+
+
 def bm25_rank(conn, backend, qtext, limit):
     toks = list(dict.fromkeys(TOKEN_RE.findall(qtext.lower())))
     if not toks:
@@ -517,17 +530,21 @@ def bm25_rank(conn, backend, qtext, limit):
         # noise outranks correct vector hits). Change it only together with a
         # fusion change, measured with `eval` on a real gold set.
         expr = " AND ".join(f'"{t}"' for t in toks)
+        # `LIMIT NULL` is a datatype error in SQLite, so the clause is built
+        # conditionally: an uncapped list simply omits it.
+        tail = "" if limit is None else " LIMIT ?"
+        params = (expr,) if limit is None else (expr, limit)
         try:
             rows = conn.execute(
                 f"SELECT rowid, bm25(chunks_fts, {BM25_K1}, {BM25_B}) AS s"
-                " FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY s LIMIT ?",
-                (expr, limit),
+                f" FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY s{tail}",
+                params,
             ).fetchall()
         except sqlite3.OperationalError:
             rows = conn.execute(
                 "SELECT rowid, bm25(chunks_fts) AS s"
-                " FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY s LIMIT ?",
-                (expr, limit),
+                f" FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY s{tail}",
+                params,
             ).fetchall()
         # FTS5 bm25() is negative-better, so ascending order is relevance order.
         return [(cid, -score) for cid, score in rows]
@@ -553,7 +570,7 @@ def own_bm25_rank(conn, toks, limit):
             denom = tf + BM25_K1 * (1.0 - BM25_B + BM25_B * (dlen / avg_len))
             scores[chunk_id] = scores.get(chunk_id, 0.0) + idf * tf * (BM25_K1 + 1.0) / denom
     ranked = sorted(scores.items(), key=lambda kv: -kv[1])
-    return ranked[:limit]
+    return apply_limit(ranked, limit)
 
 
 def vector_rank(conn, qvec, limit):
@@ -564,7 +581,7 @@ def vector_rank(conn, qvec, limit):
     ):
         scored.append((chunk_id, sum(a * b for a, b in zip(unit, unpack_vec(blob)))))
     scored.sort(key=lambda kv: -kv[1])
-    return scored[:limit]
+    return apply_limit(scored, limit)
 
 
 def rrf_fuse(lists, k=RRF_K):
