@@ -17,7 +17,7 @@ kb-skills/
 ├── wiki/                    ← vault scaffolding + routing
 ├── wiki-ingest/             ← add a source to the vault
 ├── wiki-lint/               ← health check + deterministic gates
-│   └── scripts/             ← run-lint.py aggregator + nine lint-*.py checks
+│   └── scripts/             ← run-lint.py aggregator + ten lint-*.py checks
 ├── wiki-fold/  wiki-issues/  wiki-markdown/
 ├── wiki-search/             ← wiki Q&A + hybrid BM25+vector vault search
 │   └── scripts/             ← wiki-search.py; data in .cache/wiki-search/

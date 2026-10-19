@@ -79,6 +79,7 @@ CHECKS = [
     ("lint-frontmatter.py", "Frontmatter Gaps"),
     ("lint-contradictions.py", "Contradictions"),
     ("lint-relations.py", "Typed Relations"),
+    ("lint-empty-sections.py", "Empty Sections"),
     ("lint-citations.py", "Citations"),
     ("lint-stale-citations.py", "Stale Citations"),
     ("lint-tag-taxonomy.py", "Tag Vocabulary"),

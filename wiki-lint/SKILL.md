@@ -17,9 +17,9 @@ Run lint after every 10-15 ingests, or weekly. Ask before auto-fixing anything. 
 ## Deterministic engine first, judgment second
 
 Before applying judgment-based checks, run the deterministic aggregator. It
-runs the nine checks that ship with this skill — dead links, orphans,
-frontmatter gaps, contradictions, typed relations, citations, stale citations,
-tag vocabulary and misplaced pages — and reports per-check status
+runs the ten checks that ship with this skill — dead links, orphans,
+frontmatter gaps, contradictions, typed relations, empty sections, citations,
+stale citations, tag vocabulary and misplaced pages — and reports per-check status
 (`pass` / `fail` / `error`). `--json` prints `{"results": [...], "pages": N}`.
 A check that cannot run is `error`, not `skip`, and `error` fails the exit code:
 
@@ -50,7 +50,7 @@ Work through these in order:
 4. **Missing pages**. Concepts or entities mentioned in multiple pages but lacking their own page.
 5. **Missing cross-references**. Entities mentioned in a page but not linked.
 6. **Frontmatter gaps**. Pages missing required fields (type, status, created, updated, tags).
-7. **Empty sections**. Headings with no content underneath.
+7. **Empty sections** (deterministic). A heading with no content and no child headings (`scripts/lint-empty-sections.py`, aggregated into `run-lint.py`). Heading-level aware: `##` immediately followed by `###` is not empty, fenced code counts as content, frontmatter and navigation pages are skipped. `--thin N` adds a report-only warning for sections under N characters (off by default — many legitimate sections are one short line); the error is the gate.
 8. **Stale index entries**. Items in `wiki/index.md` pointing to renamed or deleted pages.
 9. **Address validity** (DragonScale Mechanism 2). For every page that has an `address:` frontmatter field, validate the format. See `references/opt-in-checks.md` (§ Address Validation).
 10. **Semantic tiling** (DragonScale Mechanism 3, opt-in). Flag candidate duplicate pages (across all scanned types, not just concepts) via embedding cosine similarity. See `references/opt-in-checks.md` (§ Semantic Tiling).
