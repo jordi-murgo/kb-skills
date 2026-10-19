@@ -27,23 +27,24 @@ human approval gate in the middle. The clean output feeds the `wiki-ingest` skil
 the author decides what to act on. The Stage-4 file carries the original
 information verbatim, minus conversion artifacts.
 
-The two helper scripts live in `scripts/` next to this skill. Run the pipeline
-via the `/doc-pipeline` command, which guarantees `$CLAUDE_PLUGIN_ROOT` is set:
+The two helper scripts live in `scripts/` next to this skill:
 
 ```bash
-"$CLAUDE_PLUGIN_ROOT/skills/doc-pipeline/scripts/convert-doc.py"   # Stage 1
-"$CLAUDE_PLUGIN_ROOT/skills/doc-pipeline/scripts/finalize-md.py"   # Stage 4
+python3 .agents/skills/doc-pipeline/scripts/convert-doc.py   # Stage 1
+python3 .agents/skills/doc-pipeline/scripts/finalize-md.py   # Stage 4
 ```
 
-If the skill is triggered without `$CLAUDE_PLUGIN_ROOT` set (e.g. autonomously,
-not through the command), locate this skill's own directory and call the scripts
-from its `scripts/` subfolder. The scripts operate on the **current vault**
-(resolved via the plugin-wide `lib/vault_root.py` — order: `KM_VAULT_PATH` env
-→ cwd; override with `KM_VAULT_PATH` for hooks/CI where cwd is not the vault),
-regardless of where the plugin is installed.
-Requires `markit` (`npm i -g markit-ai`); a `pandoc` reference and macOS
-`textutil`/`libreoffice` pre-handling are used when available.
-
+The scripts operate on the **current vault**: they walk up from the working
+directory (then from their own location) for a directory holding `wiki/` and
+`.git` whose `wiki/` is not a skill (no `wiki/SKILL.md`). Run them from the
+vault root, or from anywhere inside it; outside a vault they refuse to run.
+Uses `markit` when installed globally (`npm i -g @shiftlabs/markit`), or falls
+back automatically to `npx -y @shiftlabs/markit` (no global install needed;
+`markit-ai` is only a compatibility shim for `@shiftlabs/markit`). A `pandoc`
+reference and macOS `textutil`/`libreoffice` pre-handling are used when
+available. Never run `markit onboard` (it overwrites `AGENTS.md`), and for URLs
+download the file with `curl` before converting (markit's built-in HTTP fetcher
+resets on some servers).
 ---
 
 ## When to use
@@ -60,9 +61,9 @@ for Stage 1+2 in parallel (see Batch mode), then review and finalize.
 ## Stage 1 — Convert (deterministic, no judgement)
 
 ```bash
-"$CLAUDE_PLUGIN_ROOT/skills/doc-pipeline/scripts/convert-doc.py" "<path/to/source>"
+python3 .agents/skills/doc-pipeline/scripts/convert-doc.py "<path/to/source>"
 # custom staging layout, e.g. a vault that nests under .raw/training/:
-"$CLAUDE_PLUGIN_ROOT/skills/doc-pipeline/scripts/convert-doc.py" "<src>" --out-dir .raw/training/_staging
+python3 .agents/skills/doc-pipeline/scripts/convert-doc.py "<src>" --out-dir .raw/training/_staging
 ```
 
 - Writes `.raw/_staging/<slug>.md` (markit) and `.raw/_staging/_ref/<slug>.ref.md` (pandoc, for docx/doc/html/epub).
@@ -144,7 +145,7 @@ Place each comment **immediately above or beside** the spot it refers to:
 
 When `mermaid?` applies, name the diagram type (`flowchart`, `sequenceDiagram`,
 `mindmap`, `timeline`) and the nodes. **Do not insert the diagram during QC.**
-Insert it only if the author says so — then add a fenced ```mermaid block and
+Insert it only if the author says so — then add a fenced `mermaid` block and
 drop the `mermaid?` comment.
 
 ---
@@ -165,7 +166,7 @@ Never finalize a document the author has not approved.
 ## Stage 4 — Finalize (deterministic)
 
 ```bash
-"$CLAUDE_PLUGIN_ROOT/skills/doc-pipeline/scripts/finalize-md.py" .raw/_staging/<slug>.md
+python3 .agents/skills/doc-pipeline/scripts/finalize-md.py .raw/_staging/<slug>.md
 ```
 
 - Refuses unless `status: approved` (override `--force`).

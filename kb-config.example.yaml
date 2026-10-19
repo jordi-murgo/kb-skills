@@ -11,8 +11,9 @@
 # different things depending on which pipeline read it.
 #
 # CREDENTIALS never live here. Jira reads ATLASSIAN_EMAIL and ATLASSIAN_API_KEY
-# from the environment or .env.local. The historical misspelling ATLASIAN_* (one
-# S) still works so existing vaults keep running, but it warns.
+# from the environment, .env, or .env.local. The historical misspelling
+# ATLASIAN_* (one S) is still accepted with a warning so existing vaults keep
+# running.
 #
 # JSON is still accepted (kb-config.json) so projects can migrate at their own
 # pace. YAML needs PyYAML in Python; graph-fetch.ps1 installs powershell-yaml on
@@ -121,13 +122,13 @@ repos:
   # any forge. Tracked with git + YOUR credentials (blobless bare mirror in
   # .cache/remotes/); new tags become claims. ${VAR} macros work.
   # Scalar form:
-  sacra-backend: git@git.gft.com:cybersecurity-practice/sacra/sacra-backend.git
+  your-service: git@github.com:your-org/your-service.git
   # Mapping form (adds target_page; default wiki/x-radar/<name>.md):
   llama-cpp:
     remote: https://github.com/ggml-org/llama.cpp.git
     target_page: wiki/x-radar/llama-cpp.md
   # Azure DevOps, any ssh/https remote:
-  #agentic-builder: git@ssh.dev.azure.com:v3/gft-assets/gft-ai-platform/agentic-builder
+  #azure-repo: git@ssh.dev.azure.com:v3/your-org/your-project/your-repo
   # Existing local clone instead of a mirror (changelog + conventional commits):
   #my-spike:
   #  path: ../my-project-spike

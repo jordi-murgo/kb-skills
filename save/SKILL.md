@@ -24,13 +24,17 @@ Determine the best type from the conversation content:
 
 | Type | Folder | Use when |
 |------|--------|---------|
-| synthesis | wiki/questions/ | Multi-step analysis, comparison, or answer to a specific question |
-| concept | wiki/concepts/ | Explaining or defining an idea, pattern, or framework |
-| source | wiki/sources/ | Summary of external material discussed in the session |
-| decision | wiki/meta/ | Architectural, project, or strategic decision that was made |
-| session | wiki/meta/ | Full session summary: captures everything discussed |
+| `question` | wiki/questions/ | Multi-step analysis, comparison, or a direct answer to one specific question |
+| `concept` | wiki/concepts/ | Explaining or defining an idea, pattern, or framework |
+| `source` | wiki/sources/ | Summary of external material discussed in the session |
+| `decision` | wiki/decisions/ | Architectural, project, or strategic decision that was made |
+| `meta` | wiki/meta/ | Full session summary, or any note that is about the wiki itself |
 
-If the user specifies a type, use that. If not, pick the best fit based on the content. When in doubt, use `synthesis`.
+The `type:` field must use one of these values (plus `entity`, `domain`,
+`comparison`, and `overview`, which this skill does not create). `synthesis`
+is not a type: it is a `question` page.
+
+If the user specifies a type, use that. If not, pick the best fit based on the content. When in doubt, use `question`.
 
 ---
 
@@ -60,7 +64,7 @@ If the user specifies a type, use that. If not, pick the best fit based on the c
 
 ```yaml
 ---
-type: <synthesis|concept|source|decision|session>
+type: <question|concept|source|decision|meta>
 title: "Note Title"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
@@ -70,11 +74,11 @@ status: developing
 related:
   - "[[Any Wiki Page Mentioned]]"
 sources:
-  - "[[.raw/source-if-applicable.md]]"
+  - "[[source-page]]"   # a wiki page; cite raw files inline with ^[.raw/...]
 ---
 ```
 
-For `question` type, add:
+Every `question` page also carries:
 ```yaml
 question: "The original query as asked."
 answer_quality: solid

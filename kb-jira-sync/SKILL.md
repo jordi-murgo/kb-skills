@@ -72,16 +72,16 @@ All commands assume `TWG_CONFIG_DIR=.twg` is set in the environment (via
 
 ```bash
 # 1. Context graph of an issue — shows parent, children, sprints, links, assignee
-twg context get BI2614-3
+twg context get PROJ-3
 
 # 2. Semantic search across Jira (Rovo) — finds related issues by meaning, not text
-twg rovo search "infrascan security" --app jira --limit 20
+twg rovo search "access control" --app jira --limit 20
 
 # 3. Confluence search — finds wiki pages related to the project
 twg confluence search "project name" --limit 10
 
 # 4. JQL query via TWG (richer relationship data than the import script)
-twg jira workitem query --jql "project = BI2614 AND updated >= -7d ORDER BY updated DESC"
+twg jira workitem query --jql "project = PROJ AND updated >= -7d ORDER BY updated DESC"
 
 # 5. Work tree — rollup of a person's work across Jira, PRs, docs
 twg work-tree <account-id>
@@ -128,10 +128,13 @@ command -v twg >/dev/null 2>&1 && [ -f .twg/auth.conf ] && echo "twg ready" || e
 ## Stage 1: import
 
 ```bash
-export ATLASSIAN_EMAIL="your-email@example.com"
-export ATLASSIAN_API_KEY="<api token>"
+# Credentials come from .env / .env.local (loaded by the script) or the shell.
 python3 .agents/skills/kb-jira-sync/scripts/import-jira.py
 ```
+
+The script resolves the vault by walking up from the current directory (then
+from its own location) for a directory holding `wiki/` and `.git`, so run it
+from anywhere inside the vault.
 
 Everything else comes from the `jira` section of `kb-config.yaml` at the vault
 root: `base_url`, `project_key`, `output_dir`, `cache_dir`.
@@ -161,15 +164,12 @@ python3 .../import-jira.py --debug         # list unhandled ADF node types
 
 Deleting the cache is safe. The next run refills it.
 
-### Incremental by default
+### Content-diff writes by default
 
-Each run reads `updated:` from the frontmatter of the existing `.md` files and
-asks Jira only for what changed since — rewound 24h, because JQL resolves bare
-timestamps in the requesting user's timezone and over-fetching is free while
-under-fetching is a silent gap.
-
-A single file without parseable frontmatter forces a full sync, and the script
-says so. That is what happens on the first run after this format change.
+Each run fetches the project's issues via JQL pagination (`POST /rest/api/3/search/jql`),
+caches the verbatim JSON payload in `cache_dir`, and overwrites `<output_dir>/<KEY>.md`
+only when the rendered Markdown actually changed — keeping `git status` clean across
+no-op runs.
 
 ### Failures are not written
 
@@ -183,39 +183,36 @@ the good file. Treat a non-zero exit as "the vault is incomplete", not "noise".
 
 The renderer decides what leaves the machine. The JSON cache holds every custom
 field, `accountId` and avatar URL Jira returns; the markdown carries only the
-frontmatter schema below plus rendered content. Assignee and reporter **display
-names do reach git** — that is a deliberate trade, and it is why the vault
-repository must stay private.
+deterministic header table below plus rendered description, labels, subtasks,
+issue links and comments. Assignee and reporter **display names do reach git** —
+that is a deliberate trade, and it is why the vault repository must stay private.
 
 ## Stage 2: reconcile the wiki
 
 After the import, reconcile `.raw/jira/` against `wiki/jira-issues/`.
 
-Read state from the **frontmatter**, not the body:
+Read state from the deterministic header table at the top of each `.raw/jira/<KEY>.md`:
 
-```yaml
----
-key: PROJ-45
-source: jira
-type: Story
-status: In Progress
-resolution: ""
-priority: High
-assignee: Ada Lovelace
-reporter: Alan Turing
-created: "2026-01-05T09:00:00.000+0100"
-updated: "2026-07-28T14:22:00.000+0200"
-due: ""
-project: PROJ
-parent: PROJ-12
-labels: [auth, backend]
-components: [gateway]
-url: "https://org.atlassian.net/browse/PROJ-45"
----
+```markdown
+# PROJ-45: Summary title
+
+| Field | Value |
+|---|---|
+| Type | Story |
+| Status | In Progress |
+| Priority | High |
+| Assignee | Ada Lovelace |
+| Reporter | Alan Turing |
+| Created | 2026-01-05T09:00:00.000+0100 |
+| Updated | 2026-07-28T14:22:00.000+0200 |
+| Due Date |  |
+| Project | PROJ — Project Name |
+| Parent | PROJ-12 |
+| URL | https://org.atlassian.net/browse/PROJ-45 |
 ```
 
-So `rg '^status:' .raw/jira/` answers the status question for the whole project
-in one call. Do not parse the body for it.
+So `rg '^\| Status \|' .raw/jira/` answers the status question for the whole
+project in one call.
 
 Scope the work with git rather than re-reading everything — the import already
 wrote only what changed:

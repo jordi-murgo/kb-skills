@@ -5,7 +5,7 @@ description: "Rollup of wiki log entries into meta-pages. Reads the last 2^k ent
 
 # wiki-fold: Extractive Log Rollup
 
-Implements a bounded subset of Mechanism 1 from [[DragonScale Memory]]: flat fold over raw `wiki/log.md` entries. Fold-of-folds (hierarchical level-stacking) is **out of scope for this skill**; see "Scope boundary" below.
+Implements a bounded subset of the DragonScale Memory design (Mechanism 1): a flat fold over raw `wiki/log.md` entries. Fold-of-folds (hierarchical level-stacking) is **out of scope for this skill**; see "Scope boundary" below.
 
 A fold is **additive**: child log entries and their referenced pages are never modified, moved, or deleted. A fold is **extractive**: every outcome and theme in the output must be traceable to a specific child log entry. No invented facts, no synthesis beyond what the child entries support.
 
@@ -87,12 +87,12 @@ Build a structured children list:
 children:
   - date: "2026-04-23"
     op: "save"
-    title: "DragonScale Memory v0.2 — post-adversarial-review"
-    page: "[[DragonScale Memory]]"
+    title: "Example entry title, verbatim from log.md"
+    page: "[[Some Page]]"
   - ...
 ```
 
-One record per log entry. Do not dedupe by page: if two entries both point to `[[DragonScale Memory]]`, both records appear, distinguishable by date and title.
+One record per log entry. Do not dedupe by page: if two entries both point to `[[Some Page]]`, both records appear, distinguishable by date and title.
 
 ### 3. Read referenced pages (bounded)
 

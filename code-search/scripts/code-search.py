@@ -97,7 +97,11 @@ def find_root(explicit=None):
         return path.resolve()
     for start in (Path.cwd().resolve(), Path(__file__).resolve().parent):
         for parent in (start, *start.parents):
-            if (parent / "wiki").is_dir() and (parent / ".git").exists():
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
                 return parent
     raise CodeSearchError("Vault root not found; run inside a wiki/Git vault or pass --root")
 

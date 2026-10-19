@@ -21,11 +21,23 @@ from datetime import date
 
 
 def find_wiki_root(start: str = ".") -> str:
-    p = Path(start).resolve()
-    for parent in [p] + list(p.parents):
-        if (parent / "wiki").is_dir():
-            return str(parent)
-    return str(p)
+    """Walk up for the vault root: wiki/ AND .git.
+
+    Both markers are required. There is a skill directory named "wiki" under
+    .agents/skills/, so wiki/ alone stops the walk at the skills directory
+    instead of the vault root. cwd first, then this script's own location.
+    """
+    for base in (Path(start).resolve(), Path(__file__).resolve()):
+        for parent in (base, *base.parents):
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
+                return str(parent)
+    raise SystemExit(
+        "error: vault root not found — run inside a project with wiki/ and .git"
+    )
 
 
 def run_check(script_name: str, wiki_root: str) -> dict:

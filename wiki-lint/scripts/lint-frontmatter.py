@@ -9,23 +9,34 @@ Excludes meta/navigation pages (hot.md) which are allowed to have minimal frontm
 
 import sys
 import os
-import re
 import glob
 from pathlib import Path
 
 
 def find_wiki_root(start: str = ".") -> str:
-    p = Path(start).resolve()
-    for parent in [p] + list(p.parents):
-        if (parent / "wiki").is_dir():
-            return str(parent)
-    return str(p)
+    """Walk up for the vault root: wiki/ AND .git.
+
+    Both markers are required. There is a skill directory named "wiki" under
+    .agents/skills/, so wiki/ alone stops the walk at the skills directory
+    instead of the vault root. cwd first, then this script's own location.
+    """
+    for base in (Path(start).resolve(), Path(__file__).resolve()):
+        for parent in (base, *base.parents):
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
+                return str(parent)
+    raise SystemExit(
+        "error: vault root not found — run inside a project with wiki/ and .git"
+    )
 
 
 REQUIRED_FIELDS = ["type", "title", "created", "updated", "tags", "status"]
 
-# Pages allowed to have minimal frontmatter
-EXEMPT_PAGES = {"hot", "index", "log"}
+# Navigation and state pages allowed to have minimal frontmatter
+EXEMPT_PAGES = {"hot", "index", "log", "_index", "overview", "dashboard", "goals"}
 
 
 def parse_frontmatter(content: str) -> dict[str, bool]:
@@ -47,6 +58,7 @@ def parse_frontmatter(content: str) -> dict[str, bool]:
 def main():
     wiki_root = find_wiki_root()
     gaps = []
+    checked = 0
 
     for md_file in sorted(glob.glob(f"{wiki_root}/wiki/**/*.md", recursive=True)):
         stem = Path(md_file).stem
@@ -55,6 +67,7 @@ def main():
         rel_path = os.path.relpath(md_file, wiki_root)
         content = Path(md_file).read_text(encoding="utf-8", errors="replace")
         fm = parse_frontmatter(content)
+        checked += 1
 
         missing = [f for f in REQUIRED_FIELDS if f not in fm]
         if missing:
@@ -66,8 +79,6 @@ def main():
             print(f"  {rel_path} — missing: {', '.join(missing)}")
         sys.exit(1)
     else:
-        files = len(glob.glob(f"{wiki_root}/wiki/**/*.md", recursive=True))
-        checked = files - len(EXEMPT_PAGES)
         print(f"OK: all {checked} pages have required frontmatter")
         sys.exit(0)
 

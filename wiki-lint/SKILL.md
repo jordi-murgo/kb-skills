@@ -3,7 +3,7 @@ name: wiki-lint
 description: >
   Health check the wiki vault. Finds orphan pages, dead wikilinks, stale claims,
   missing cross-references, frontmatter gaps, dangling typed relations, and
-  empty sections. Creates or updates Dataview dashboards. Triggers on: "lint",
+  empty sections. Maintains the plain-Markdown lint-health dashboard. Triggers on: "lint",
   "health check", "clean up wiki", "check the wiki", "wiki maintenance",
   "find orphans", "wiki audit".
 ---
@@ -17,10 +17,11 @@ Run lint after every 10-15 ingests, or weekly. Ask before auto-fixing anything. 
 ## Deterministic engine first, judgment second
 
 Before applying judgment-based checks, run the deterministic aggregator. It
-covers every check that can be answered without an LLM (spaced filenames,
-spaced wikilinks in bodies, orphans, dead links, frontmatter gaps,
-bilingual-terminology, title-overlap) and emits a JSON summary with a per-check
-severity (`error` / `warn` / `info`) used by the commit-time and CI gates:
+runs the nine checks that ship with this skill — dead links, orphans,
+frontmatter gaps, contradictions, typed relations, citations, stale citations,
+tag vocabulary and misplaced pages — and reports per-check status
+(`pass` / `fail` / `error`). `--json` prints `{"results": [...], "pages": N}`.
+A check that cannot run is `error`, not `skip`, and `error` fails the exit code:
 
 ```bash
 # Default: writes wiki/meta/lint-report-YYYY-MM-DD.md and prints a summary
@@ -30,12 +31,12 @@ python3 .agents/skills/wiki-lint/scripts/run-lint.py
 python3 .agents/skills/wiki-lint/scripts/run-lint.py --json
 ```
 
-The aggregator resolves the vault root via `KM_VAULT_PATH` (env) → positional
-arg → cwd, so it works correctly whether the plugin is run from a marketplace
-install (`~/.claude/plugins/...`) or from a checked-out repo. The deterministic
-pass is the **engine** for everything below — only apply judgment checks
-(stale claims, missing cross-refs, semantic duplication) on top of its output,
-never as a replacement.
+The aggregator resolves the vault root by walking up from the working directory
+(then from the script's own location) for a directory with `wiki/` and `.git`,
+where `wiki/` is not a skill directory (no `wiki/SKILL.md`). Run it from inside
+the vault. The deterministic pass is the **engine** for everything below — only
+apply judgment checks (stale claims, missing cross-refs, semantic duplication)
+on top of its output, never as a replacement.
 
 ---
 
@@ -51,10 +52,10 @@ Work through these in order:
 6. **Frontmatter gaps**. Pages missing required fields (type, status, created, updated, tags).
 7. **Empty sections**. Headings with no content underneath.
 8. **Stale index entries**. Items in `wiki/index.md` pointing to renamed or deleted pages.
-9. **Address validity** (DragonScale Mechanism 2). For every page that has an `address:` frontmatter field, validate the format. See the **Address Validation** section below.
-10. **Semantic tiling** (DragonScale Mechanism 3, opt-in). Flag candidate duplicate pages (across all scanned types, not just concepts) via embedding cosine similarity. See the **Semantic Tiling** section below.
-11. **Title overlap** (lightweight duplicate pre-filter). Pages whose filename tokens overlap above a Jaccard threshold (`scripts/lint-title-overlap.py`). See the **Title Overlap** section below.
-12. **Bilingual terminology checks** (opt-in). Deterministic and judgment-based checks on DNT-classified pages. See the **Bilingual Terminology Checks** section below.
+9. **Address validity** (DragonScale Mechanism 2). For every page that has an `address:` frontmatter field, validate the format. See `references/opt-in-checks.md` (§ Address Validation).
+10. **Semantic tiling** (DragonScale Mechanism 3, opt-in). Flag candidate duplicate pages (across all scanned types, not just concepts) via embedding cosine similarity. See `references/opt-in-checks.md` (§ Semantic Tiling).
+11. **Title overlap** (lightweight duplicate pre-filter). Pages whose filename tokens overlap above a Jaccard threshold (`scripts/lint-title-overlap.py`). See `references/opt-in-checks.md` (§ Title Overlap).
+12. **Bilingual terminology checks** (opt-in). Deterministic and judgment-based checks on DNT-classified pages. See `references/opt-in-checks.md` (§ Bilingual Terminology Checks).
 13. **Typed relations** (deterministic). Dangling relation targets, unknown relation types, and self-relations in `relations:` frontmatter (`scripts/lint-relations.py`, aggregated into `run-lint.py`). The same script answers graph queries outside the gate: `graph [PAGE]` for adjacency, `reverse PAGE` for typed backlinks.
 14. **Tag vocabulary** (deterministic, opt-in). Page tags outside the fixed vocabulary in kb-config.yaml `tags.allowed` (`scripts/lint-tag-taxonomy.py`, aggregated into `run-lint.py`). Off-vocabulary tags whose normalized form (accents/separators/singular) matches exactly one allowed tag get an actionable hint ("use X or add tags.aliases"); `tags.aliases` maps known variants to canonical tags and passes. Every run refreshes the derived registry `.cache/tag-registry.json` (counts, first/last seen, status); `--survey` prints the live inventory and near-duplicate clusters for curation. Skips with exit 0 when no vocabulary is configured; case-insensitive unless `tags.case_sensitive: true`. Use it to stop drift like `flujo`/`flujos`, `kick-off`/`kickoff` or `diseño`/`diseno` (all observed in vulcano-kb before this check).
 15. **Misplaced pages** (deterministic, opt-in). Page frontmatter `type:` must be allowed in the page's top-level folder per kb-config.yaml `layout.type_folders` mapping (`scripts/lint-misplaced-pages.py`, aggregated into `run-lint.py`). Exempts `meta/`, `.reciclaje/`, root pages, `_index.md` and the state file names. `layout.require_type: true` (default) also flags non-exempt pages with no `type:`. Skips with exit 0 when no mapping is configured. Catches pages living in the wrong folder, like a `type: source` in `concepts/` or a `type: concept` in `decisiones/` (both observed in real vaults).
@@ -132,38 +133,56 @@ During lint, flag pages that violate the style guide:
 
 ---
 
-## Dataview Dashboard
+## Lint-health dashboard
 
-Create or update `wiki/meta/dashboard.md` with these queries:
+Create or update `wiki/meta/dashboard.md` as **plain Markdown** — this vault is
+read by agents and by GitHub/GitLab wikis, not by Obsidian plugins, so a
+Dataview query block renders as inert text. Regenerate the tables from the
+current lint output each run; they are a snapshot, not a live view.
 
-````markdown
+```markdown
 ---
 type: meta
-title: "Dashboard"
+title: "Lint health dashboard"
+created: YYYY-MM-DD
 updated: YYYY-MM-DD
+tags:
+  - meta
+  - lint
+status: developing
 ---
-# Wiki Dashboard
 
-## Recent Activity
-```dataview
-TABLE type, status, updated FROM "wiki" SORT updated DESC LIMIT 15
+# Wiki lint health
+
+Counts come from `run-lint.py --json` for this run.
+
+| Check | Status | Findings |
+|---|---|---|
+| Dead links | pass/fail/error | N |
+| Orphans | pass/fail/error | N |
+| Frontmatter gaps | pass/fail/error | N |
+| Typed relations | pass/fail/error | N |
+| Citations | pass/fail/error | N |
+| Stale citations | pass/fail/error | N |
+| Tag vocabulary | pass/fail/skipped | N |
+| Misplaced pages | pass/fail/skipped | N |
+
+## Pages needing development
+
+| Page | Status | Updated |
+|---|---|---|
+| [[…]] | seed | YYYY-MM-DD |
+
+## Open questions
+
+| Page | Answer quality | Created |
+|---|---|---|
+| [[…]] | draft | YYYY-MM-DD |
 ```
 
-## Seed Pages (Need Development)
-```dataview
-LIST FROM "wiki" WHERE status = "seed" SORT updated ASC
-```
-
-## Entities Missing Sources
-```dataview
-LIST FROM "wiki/entities" WHERE !sources OR length(sources) = 0
-```
-
-## Open Questions
-```dataview
-LIST FROM "wiki/questions" WHERE answer_quality = "draft" SORT created DESC
-```
-````
+`wiki/dashboard.md` (project progress against `wiki/goals.md`) is a different
+file with a different owner — see `kb-setup/assets/project-agents-block.md`.
+Do not merge the two.
 
 ---
 
@@ -181,281 +200,32 @@ Add one node per domain page. Connect domains that have significant cross-refere
 
 ---
 
-## Address Validation (DragonScale Mechanism 2 MVP)
+## Opt-in checks — load the reference, do not guess
 
-**Opt-in feature.** Address Validation runs only if the vault is using DragonScale, detected by:
+Four checks are opt-in and depend on companion scripts that do **not** ship with
+this skill: Address Validation (DragonScale), Semantic Tiling, Title Overlap and
+Bilingual Terminology.
 
-```bash
-if [ -f ./scripts/allocate-address.py ] && [ -f ./.cache/address-counter.txt ]; then
-  DRAGONSCALE_ADDRESSES=1
-else
-  DRAGONSCALE_ADDRESSES=0
-fi
-```
+**MANDATORY**: before running any of them, read
+[`references/opt-in-checks.md`](references/opt-in-checks.md) in full — it holds
+the classification rules, thresholds, exit codes and report shapes.
 
-When `DRAGONSCALE_ADDRESSES=0`, skip this entire section. Missing `address:` fields are not flagged, not even informationally. Pages that happen to have an `address:` field are passed through unvalidated (treat as user-managed metadata).
+**Do NOT load** it when the vault uses none of these features: the default lint
+path is `run-lint.py` plus the judgment checks above, and loading 260 lines of
+inactive policy dilutes them.
 
-When `DRAGONSCALE_ADDRESSES=1`, proceed with the rollout baseline and checks below.
+Trigger map:
 
-Rollout baseline: **2026-04-23** (Phase 2 ship date in vaults that adopted DragonScale on that day). Vaults that adopted DragonScale later should override this baseline by setting the earliest `created:` date of any addressed page as their personal rollout date. Record the chosen baseline at the top of `.cache/legacy-pages.txt` as a commented line: `# rollout: YYYY-MM-DD`.
-
-### Classification rule (applied per page)
-
-Before validating anything, classify the page:
-
-| Classification | Criteria |
+| Condition in the vault | Section to run |
 |---|---|
-| **Meta / fold / excluded** | File is in `wiki/folds/` OR filename in `{_index.md, index.md, log.md, hot.md, overview.md, dashboard.md, dashboard.base, Wiki Map.md, getting-started.md}`. Address not required. |
-| **Post-rollout (must have address)** | `type` is not meta/fold AND frontmatter `created:` date is >= 2026-04-23 AND file path is NOT in the legacy baseline manifest. |
-| **Legacy (backfill-eligible)** | `type` is not meta/fold AND frontmatter `created:` date is < 2026-04-23 OR file path IS in the legacy baseline manifest. Address not required until backfill. |
+| `address:` frontmatter, or `scripts/allocate-address.py` + `.cache/address-counter.txt` | Address Validation |
+| embeddings configured, or the user asks for duplicate detection beyond names | Semantic Tiling + Title Overlap |
+| `AGENTS.md`/`CLAUDE.md` references a bilingual-terminology policy | Bilingual Terminology |
 
-**Legacy baseline manifest**: optional file at `.cache/legacy-pages.txt`, one relative path per line. Pages listed there are treated as legacy regardless of `created:` date. Use this to grandfather pages whose `created:` metadata is wrong or missing.
-
-### Validation checks (run in order)
-
-1. **Format check**: any page with `address:` set must match one of:
-   - `^c-[0-9]{6}$` — post-rollout creation address.
-   - `^l-[0-9]{6}$` — legacy-backfill address.
-   - Pages under `wiki/folds/` use `fold_id`, not `address`; do not apply the `c-`/`l-` regex there.
-
-2. **Uniqueness check**: no two pages share the same address value. Report both paths.
-
-3. **Counter consistency**: `python3 scripts/allocate-address.py --peek` returns the next counter value. Every observed `c-NNNNNN` must satisfy `NNNNNN < peek_value`. Violation = counter drift.
-
-4. **Post-rollout enforcement**: every page classified as "post-rollout (must have address)" that LACKS the `address:` field is a lint **error**, not informational. This prevents the silent-regression path where a new page skips address assignment.
-
-5. **Legacy identification**: every page classified as "legacy" that LACKS an address is informational. The lint report lists them under "Pending backfill" with total count.
-
-6. **Address-map consistency** (`.raw/.manifest.json`): for every page path in `address_map`, the page must exist and its frontmatter `address` must match the mapping. Mismatches are errors (either a rename dropped the map update, or a manual edit diverged).
-
-### Lint posture summary
-
-- Pages that HAVE an address with bad format: **error**.
-- Pages that HAVE colliding addresses: **error**.
-- Pages classified **post-rollout** WITHOUT an address: **error**.
-- Pages classified **legacy** WITHOUT an address: **informational** (expected).
-- Meta and fold pages without `address`: **ignored** (not applicable).
-- Counter drift (observed counter >= peek): **error**.
-- Address-map mismatch: **error**.
-
-Lint only observes. Do NOT auto-assign missing addresses during lint. Assignment is `wiki-ingest`'s responsibility only.
-
-### Output section in the lint report
-
-```markdown
-## Address Validation
-
-- Counter state: `$(python3 scripts/allocate-address.py --peek)`
-- Highest c- address observed: c-XXXXXX
-- Post-rollout pages checked: N (X passing, Y errors)
-- Legacy pages pending backfill: M
-
-### Errors
-- [[Page Name]]: invalid address format `{value}`. Expected `c-NNNNNN` or `l-NNNNNN`.
-- [[Page A]] and [[Page B]] share address `c-000042`.
-- [[Post-Rollout Page]]: missing address. Page created 2026-04-25 (post-rollout); address required. Run wiki-ingest or manually run `python3 scripts/allocate-address.py` and add to frontmatter.
-- [[Page Name]] has address `c-000100` but counter peek is `50`. Counter drift; run `python3 scripts/allocate-address.py --rebuild`.
-- `.raw/.manifest.json` maps `wiki/foo.md` -> `c-000010` but page frontmatter has `c-000012`. Resolve mismatch.
-
-### Pending backfill (informational)
-- M legacy pages without addresses. See `.cache/legacy-pages.txt` for the canonical legacy set, or filter by `created:` < 2026-04-23.
-```
+A missing companion script is reported as `not available`, never as a pass.
 
 ---
 
-## Semantic Tiling (DragonScale Mechanism 3 MVP, opt-in)
-
-**Opt-in feature.** Semantic tiling flags candidate duplicate *pages* (not just concept pages — see Scope below) using embedding cosine similarity. Local ollama only by default; remote endpoints require an explicit override flag.
-
-### Detection and delegation
-
-```bash
-if [ -x ./scripts/tiling-check.py ] && command -v python3 >/dev/null 2>&1; then
-  ./scripts/tiling-check.py --peek > /tmp/tiling-peek.json 2>/dev/null
-  PEEK_EXIT=$?
-  case $PEEK_EXIT in
-    0)  TILING_READY=1 ;;                                  # ready
-    2)  TILING_READY=0 ; echo "tiling ERROR: usage error (exit 2); inspect /tmp/tiling-peek.json" ;;
-    3)  TILING_READY=0 ; echo "tiling ERROR: cache corrupt (exit 3); inspect .cache/tiling-cache.json" ;;
-    4)  TILING_READY=0 ; echo "tiling ERROR: vault exceeds scale hard-fail (exit 4); batching required" ;;
-    10) TILING_READY=0 ; echo "tiling skipped: ollama not reachable (exit 10)" ;;
-    11) TILING_READY=0 ; echo "tiling skipped: run 'ollama pull nomic-embed-text' to enable (exit 11)" ;;
-    *)  TILING_READY=0 ; echo "tiling ERROR: unexpected exit code $PEEK_EXIT from tiling-check.py --peek" ;;
-  esac
-else
-  TILING_READY=0
-  echo "tiling skipped: scripts/tiling-check.py or python3 not available"
-fi
-```
-
-Inspect `/tmp/tiling-peek.json` (structured diagnostics: script path, python interpreter, ollama URL, cache state, thresholds state) whenever the status is ambiguous. Never collapse unknown exits into "unknown status" silently.
-
-When `TILING_READY=1`:
-
-```bash
-./scripts/tiling-check.py --report wiki/meta/tiling-report-YYYY-MM-DD.md
-REPORT_EXIT=$?
-case $REPORT_EXIT in
-  0)  echo "tiling report written" ;;
-  2)  echo "tiling ERROR: usage error during --report" ;;
-  3)  echo "tiling ERROR: cache corrupt during --report" ;;
-  4)  echo "tiling ERROR: scale hard-fail during --report" ;;
-  10) echo "tiling ERROR: ollama became unreachable between --peek and --report" ;;
-  11) echo "tiling ERROR: model became unavailable between --peek and --report" ;;
-  *)  echo "tiling ERROR: unexpected exit code $REPORT_EXIT from tiling-check.py --report" ;;
-esac
-```
-
-### Scope (what the helper scans)
-
-- Includes: every `.md` under `wiki/` **except** the exclusion set below. The scope is "candidate tileable pages," not just `type: concept`.
-- Excludes (path): anything under `wiki/folds/` or `wiki/meta/`.
-- Excludes (filename): `_index.md`, `index.md`, `log.md`, `hot.md`, `overview.md`, `dashboard.md`, `Wiki Map.md`, `getting-started.md`.
-- Excludes (frontmatter): `type: meta` or `type: fold`.
-- Excludes (security): symlinks. Any page file that is a symlink, or whose resolved path escapes the vault root, is skipped.
-
-If you place a real concept under `wiki/meta/` it will be excluded by path regardless of content. Keep concepts in their canonical folders.
-
-### How the helper works
-
-- Computes one embedding per included page via the ollama `nomic-embed-text` model by default.
-- Caches embeddings at `.cache/tiling-cache.json`, keyed on `sha256(model + body)` so model drift auto-invalidates. Frontmatter is not part of the hash or the embedding input — pure frontmatter edits (tag changes, status bumps) do not trigger recomputation.
-- Orphans are GC'd: when a cached page path no longer exists on disk, its entry is dropped on save.
-- Concurrent-safe: exclusive flock on `.cache/.tiling.lock` around cache I/O; per-PID temp file for atomic writes.
-
-### Security posture
-
-- Defaults to `http://127.0.0.1:11434`. `OLLAMA_URL` env override is accepted **only** with `--allow-remote-ollama` because page bodies are POSTed as embedding input.
-- Symlinks and vault-root escapes are rejected.
-
-### Default bands (conservative seeds, NOT calibrated)
-
-| Band | Similarity | Report section |
-|---|---|---|
-| Error | `>= 0.90` | **Errors** — strong near-duplicate, likely the same concept |
-| Review | `0.80 - 0.90` | **Review** — possible tile overlap; human judgement needed |
-| Pass | `< 0.80` | not emitted |
-
-**These values are conservative seeds, not literature-backed interpolation.** Published reference points: Sentence Transformers `community_detection` defaults to 0.75; Quora-duplicate calibrations land around 0.7715-0.8352 depending on objective. The 0.80 review floor is already stricter than at least one cited Quora optimum, so expect **false negatives** against those baselines. Reduce the review floor during calibration if you want more sensitivity.
-
-### Calibration procedure (manual, one-time per vault)
-
-1. Run the helper with defaults. Capture the **Review** band pairs.
-2. Temporarily lower `bands.review` to `0.70` in `.cache/tiling-thresholds.json` to surface a wider sample. Aim for >=50 pairs spanning 0.70-0.95.
-3. Label each pair: `duplicate`, `similar`, `distinct`.
-4. Pick bands such that: (a) the `error` band contains >= 95% true duplicates; (b) the `review` band captures `similar` pairs without swamping the report with `distinct` ones.
-5. Edit `.cache/tiling-thresholds.json`: set new `bands.error` and `bands.review`, set `calibrated: true`, set `calibration_pairs_labeled` to the label count.
-6. Re-run lint. Report footer now says `calibrated: true`.
-
-### Scale
-
-- Cold-cache cost is O(N) POSTs to ollama. Warm-cache cost is O(N^2) cosines in pure Python.
-- Helper prints a warning at > 500 pages and hard-fails (exit 4) at > 5000. Revisit the implementation (batching, vectorized cosine, or external tooling) before exceeding either limit.
-
-### Lint report embed
-
-```markdown
-## Semantic Tiling
-See [[tiling-report-YYYY-MM-DD]] for the full pair listing.
-- Errors (>=0.90): N pairs
-- Review (0.80-0.90): M pairs
-- Calibrated: true|false
-```
-
-### Invariants
-
-- Read-only. `tiling-check.py` never modifies wiki pages.
-- No auto-merge. Duplicates are listed, never resolved.
-- Cache is incremental and model-scoped. Unchanged pages are not re-embedded.
-- Exit codes: `0` ok, `2` usage error, `3` cache corrupt, `4` scale hard-fail, `10` ollama unreachable, `11` model missing. Surface all of them; do not collapse into a single "unknown" bucket.
-
----
-
-## Title Overlap
-
-Lightweight duplicate-page pre-filter, no embeddings. Runs `scripts/lint-title-overlap.py` over `wiki/**/*.md` and reports pairs whose filename tokens overlap above a Jaccard threshold (default 0.55).
-
-### When to use
-
-- Always — the script is fast (O(N²) Jaccard on tokenized stems, < 1s for 1000 pages) and dependency-free.
-- Complements Semantic Tiling (Mechanism 3) at the cheap end of the precision/recall curve: catches near-duplicates with similar names that humans accidentally created, misses semantic duplicates with no shared tokens.
-
-### Invocation
-
-```bash
-python3 scripts/lint-title-overlap.py wiki 0.55
-```
-
-The output is `score\tpath-a\tpath-b` lines, sorted by score descending. Pipe to the lint report's *Title Overlap* section.
-
-### Report section
-
-```markdown
-## Title Overlap (Jaccard ≥ 0.55)
-- 0.83  wiki/concepts/KI-Berater-Tagessatz-DE.md  ↔  wiki/concepts/KI-Berater-DACH.md
-- 0.60  wiki/entities/LangDock.md                 ↔  wiki/entities/LangDock-Berlin.md
-```
-
-### Severity
-
-- `≥ 0.80`: error — almost certainly duplicates.
-- `0.55 - 0.80`: review — human eyeballs.
-- `< 0.55`: not emitted.
-
-Never auto-merge. List, let the user decide.
-
----
-
-## Bilingual Terminology Checks (opt-in)
-
-**Opt-in feature.** Bilingual checks run only if the vault's `CLAUDE.md` references `docs/bilingual-terminology-policy.md`. Otherwise, skip this section.
-
-Combines deterministic checks (run by `scripts/lint-terminology.py`) and judgment-based checks (run in this skill body during the lint pass).
-
-### Deterministic checks (run script first)
-
-```bash
-python3 scripts/lint-terminology.py wiki
-```
-
-The script emits a structured report with these findings:
-
-| Check | Trigger | Severity | Suggested fix |
-|---|---|---|---|
-| **Missing alias** | Page has `dnt_class:` but `aliases:` has fewer than 2 entries | error | Add native form and English gloss to `aliases:` |
-| **Termbase drift** | Page has `dnt_class:` but is not listed in `wiki/meta/termbase.md` | warn | Add row to termbase index |
-| **Orphan termbase entry** | `wiki/meta/termbase.md` references a page that does not exist or no longer has `dnt_class:` | warn | Remove row or restore `dnt_class:` |
-| **Invalid dnt_class value** | `dnt_class:` is set to anything other than `term-of-art`, `eigenname`, `coined`, `hybrid` | error | Use one of the four valid values |
-| **Hyphenated-slug alias** | An alias contains spaces but the wiki convention is hyphenated; lint flags potential resolution drift | info | Hyphenate the alias OR confirm it is a display-form, not a target-form |
-
-### Judgment-based checks (run during this skill)
-
-After running the script, do a reading pass for these issues. They are LLM-judgment calls and cannot be deterministically detected:
-
-1. **Inconsistent surface forms**. Scan for the same concept appearing as different strings on different pages — e.g., `IHK`, `Industrie- und Handelskammer`, `chamber of commerce`, `chambers` used interchangeably. Report the divergence; do not auto-rewrite.
-2. **Missing first-use gloss**. On any page that mentions a DNT term for the first time without an inline gloss `Term (English meaning, frame)`. Report the page and the term. Do not insert a gloss automatically.
-3. **Redundant glossing**. The same native term re-glossed on every mention within a page (gloss should appear once per page, then the term alone).
-4. **Suspect translation**. A native term-of-art rendered as an English near-synonym that may have changed the referent — e.g., `Geschäftsführer` written as `CEO`, `Vorstand` as `board of directors`, `AGB` as `T&C`. Flag for review against the termbase.
-5. **Retrieval-surface gaps**. A page about a native concept that is not reachable via its English gloss (alias missing or misspelled), or vice versa. Suggest the missing alias.
-
-### Report section
-
-```markdown
-## Bilingual Terminology
-- Deterministic: see `wiki/meta/lint-terminology-YYYY-MM-DD.txt`
-- Judgment findings:
-  - **Inconsistent surface form**: "IHK" / "chamber of commerce" / "chambers" appear on [[Page A]], [[Page B]], [[Page C]]. Termbase says canonical = "IHK". Suggest unifying.
-  - **Missing first-use gloss**: [[Page D]] introduces `Mitbestimmung` without inline English context. Suggest: "Mitbestimmung (Germany's employee codetermination framework)".
-  - **Suspect translation**: [[Page E]] writes "Vorstand" as "board of directors". Vorstand is the management board in a two-tier system; this changes the referent. Review.
-```
-
-### Invariants
-
-- Read-only. `lint-terminology.py` never modifies wiki pages.
-- No auto-rewrite of glosses or aliases. Surface, do not fix.
-- "I don't know the English equivalent" is a valid finding; do not invent one.
-
----
 
 ## Before Auto-Fixing
 

@@ -123,4 +123,3 @@ Body section (under the matching `## <section>`):
 4. `section` ∈ 12-whitelist. `priority` ∈ {P0,P1,P2,P3}. `id` matches `I-YYYY-NNN`, unique, never recycled.
 5. `inconclusive_since` and `inconclusive_reason` appear as a pair (both or neither). `aggregated_from` ids are not still present in the stack.
 6. Dates are `YYYY-MM-DD` strings; YAML lists use the `- item` form.
-```

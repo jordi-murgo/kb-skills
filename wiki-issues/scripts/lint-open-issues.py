@@ -41,8 +41,6 @@ import sys
 from functools import cmp_to_key
 from pathlib import Path
 
-import yaml
-
 DEFAULT_PATH = Path("wiki/meta/OPEN-ISSUES.md")
 
 ID_RE = re.compile(r"^I-\d{4}-\d{3}$")
@@ -69,8 +67,109 @@ SECTIONS = {
 REQUIRED_FIELDS = ("id", "priority", "section", "title", "pushed")
 
 
+def _strip_comment(value: str) -> str:
+    """Drop a trailing ' # comment' that is outside quotes."""
+    quote = ""
+    for i, ch in enumerate(value):
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "#" and i and value[i - 1].isspace():
+            return value[:i].rstrip()
+    return value.rstrip()
+
+
+def _scalar(value: str):
+    """Parse a constrained YAML scalar: quoted/bare string, or inline list."""
+    value = _strip_comment(value).strip()
+    if not value:
+        return None
+    if value[0] in "\"'":
+        quote = value[0]
+        if len(value) >= 2 and value[-1] == quote:
+            return value[1:-1]
+        return value[1:]
+    if value.startswith("["):
+        inner = value[1:-1] if value.endswith("]") else value[1:]
+        if not inner.strip():
+            return []
+        items, buf, quote = [], "", ""
+        for ch in inner:
+            if quote:
+                buf += ch
+                if ch == quote:
+                    quote = ""
+            elif ch in "\"'":
+                quote = ch
+                buf += ch
+            elif ch == ",":
+                items.append(_scalar(buf))
+                buf = ""
+            else:
+                buf += ch
+        if buf.strip():
+            items.append(_scalar(buf))
+        return [i for i in items if i is not None]
+    return value
+
+
+def _parse_stack(lines: list[str], start: int) -> tuple[list, int]:
+    """Parse the `stack:` block beginning after line `start`.
+
+    Returns (items, index of the first line past the block). Supports both
+    inline lists (`blocked_by: [I-2026-001]`) and block lists (`blocked_by:`
+    followed by indented `- I-2026-001` lines). Written by hand instead of
+    importing PyYAML because the repo's tooling is stdlib-only and the schema
+    here is a closed subset (a sequence of mappings with scalar or list values).
+    """
+    items: list[dict] = []
+    current: dict | None = None
+    item_indent: int | None = None
+    last_key: str | None = None
+    i = start
+    while i < len(lines):
+        raw = lines[i]
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            i += 1
+            continue
+        if not raw[:1].isspace():
+            break  # back at top level: another frontmatter key
+        indent = len(raw) - len(raw.lstrip())
+        if stripped.startswith("- ") or stripped == "-":
+            if item_indent is None or indent <= item_indent:
+                item_indent = indent
+                current = {}
+                items.append(current)
+                last_key = None
+                if stripped.startswith("- "):
+                    key, sep, value = stripped[2:].partition(":")
+                    if sep and key.strip():
+                        last_key = key.strip()
+                        current[last_key] = _scalar(value)
+            elif current is not None and last_key is not None:
+                if not isinstance(current.get(last_key), list):
+                    current[last_key] = []
+                if stripped.startswith("- "):
+                    val = _scalar(stripped[2:])
+                    if val is not None:
+                        current[last_key].append(val)
+        elif current is not None and ":" in stripped:
+            key, _, value = stripped.partition(":")
+            last_key = key.strip()
+            current[last_key] = _scalar(value)
+        i += 1
+    return items, i
+
+
 def parse_frontmatter(text: str) -> dict:
-    """Extract + parse the leading YAML frontmatter block delimited by '---'."""
+    """Extract + parse the leading YAML frontmatter block delimited by '---'.
+
+    Only `stack:` is interpreted as a list of mappings; every other top-level
+    key is returned as its scalar value (or [] for inline lists).
+    """
     if not text.startswith("---"):
         return {}
     lines = text.splitlines()
@@ -81,10 +180,30 @@ def parse_frontmatter(text: str) -> dict:
             break
     if end is None:
         return {}
-    try:
-        return yaml.safe_load("\n".join(lines[1:end])) or {}
-    except yaml.YAMLError:
-        return {}
+
+    fields: dict = {}
+    body = lines[1:end]
+    i = 0
+    while i < len(body):
+        line = body[i]
+        if not line or line[:1].isspace() or line.lstrip().startswith("#"):
+            i += 1
+            continue
+        key, sep, value = line.partition(":")
+        if not sep:
+            i += 1
+            continue
+        key = key.strip()
+        if key == "stack":
+            if value.strip():
+                fields["stack"] = _scalar(value)
+                i += 1
+            else:
+                fields["stack"], i = _parse_stack(body, i + 1)
+        else:
+            fields[key] = _scalar(value)
+            i += 1
+    return fields
 
 
 def parse_body(text: str) -> tuple[list[str], dict[str, bool]]:

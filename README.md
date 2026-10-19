@@ -17,7 +17,7 @@ kb-skills/
 ├── wiki/                    ← vault scaffolding + routing
 ├── wiki-ingest/             ← add a source to the vault
 ├── wiki-lint/               ← health check + deterministic gates
-│   └── scripts/             ← run-lint.py + the five lint-*.py checks
+│   └── scripts/             ← run-lint.py aggregator + nine lint-*.py checks
 ├── wiki-fold/  wiki-issues/  wiki-markdown/
 ├── wiki-search/             ← wiki Q&A + hybrid BM25+vector vault search
 │   └── scripts/             ← wiki-search.py; data in .cache/wiki-search/
@@ -117,9 +117,12 @@ and next steps — it is project progress, not the lint-health view at
 
 Setup preserves existing project instructions, goals and manual notes — it only
 bootstraps missing state views. No-op/unchanged batches and raw-only fetches do
-not duplicate log entries. No tooling generator is involved: these are
-AI-agent writing instructions, nothing writes `wiki/**` or `.raw/**`
-programmatically.
+not duplicate log entries. Those state views are written by the AI agent
+following the injected instructions, not by a generator: no script rewrites
+`wiki/**` prose. The two deliberate exceptions are content-producing pipelines
+that write **source material** into `.raw/` (`kb-jira-sync`, `kb-m365-fetch`,
+`doc-pipeline`) and `run-lint.py`'s report under `wiki/meta/` (suppress with
+`--no-report`).
 
 ## Configuration
 
@@ -133,13 +136,18 @@ self-documented there, including which skill consumes it. Copy it to
 | `project` | name and keywords used to match project content |
 | `embeddings` | `wiki-search` and `code-search` — model, endpoint, semantic source directories, and derived index location |
 | `code_search` | `code-search` — code source directories/extensions; inherits embeddings model/endpoint unless overridden; cache in `.cache/code-search/` |
+| `decisions` | `wiki-vetting` — System One model/endpoint for claim vetting |
 | `repos` | `wiki-git-ingest` — native Git remote URLs or an existing local clone |
 | `jira` | `kb-jira-sync` — base URL, project key, output dir |
-| `wiki_publish` | `kb-publish` — wiki repo, branch, VPN precondition |
+| `wiki_publish` | `kb-publish` — wiki repo, branch, target platform, VPN precondition |
 | `m365` | `kb-m365-fetch` — modules, output paths, time window |
+| `tags` | `wiki-lint` — allowed tag vocabulary + aliases (opt-in) |
+| `layout` | `wiki-lint` — type↔folder mapping for misplaced pages (opt-in) |
 
-Credentials never live in this file. Jira reads `ATLASIAN_EMAIL` and
-`ATLASIAN_API_KEY` from the environment or `.env.local`.
+Credentials never live in this file. Jira reads `ATLASSIAN_EMAIL` and
+`ATLASSIAN_API_KEY` from the environment, `.env`, or `.env.local`. The historical
+misspelling `ATLASIAN_*` (one `S`) is still accepted with a warning, so existing
+vaults keep working.
 
 **Every path is relative to the vault root.** Absolute paths, `~`, and `..`
 traversal are rejected — the scripts refuse to run rather than write outside the
@@ -212,9 +220,13 @@ writing down.
 
 **Repo-root resolution.** A script inside a skill cannot find the vault root by
 counting `.parent` levels: its depth depends on where the skill is installed.
-Walk up looking for a marker instead. Requiring `wiki/` alone is not enough —
-there is a skill directory named `wiki`, so the walk stops at the skills
-directory. Require `wiki/` **and** `.git`.
+Walk up looking for markers instead. `wiki/` alone is not enough — there is a
+skill directory named `wiki`, so the walk stops at the skills directory.
+`wiki/` **and** `.git` is still not enough for this repository, which is itself
+a git checkout containing a `wiki/` skill. The third marker is the shape of the
+directory: a vault's `wiki/` holds pages, a skill's holds `SKILL.md`. Reject a
+candidate whose `wiki/SKILL.md` exists, then walk from `cwd` first and from the
+script's own location second.
 
 **Vacuous gates.** `run-lint.py` resolves its sibling checks relative to its own
 file, and treats a check it cannot run as a failure. An earlier version resolved

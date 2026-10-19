@@ -8,14 +8,14 @@ any forge (ssh 'git@host:group/proj.git', https://..., Azure DevOps, GitLab,
 Bitbucket, ...) — tracked with git itself and your own credentials. A blobless
 bare mirror is cloned once into .cache/remotes/<name>.git and fetched on
 every scan; new tags (name, date, annotated-tag subject) become claims shaped
-for scripts/wiki_vet.py: {"claim", "quote", "target_page"}.
+for the wiki-vetting skill (scripts/wiki-vet.py): {"claim", "quote", "target_page"}.
 
 For a repo already cloned on this machine use {path: <clone>} instead: no
 mirror, plus CHANGELOG.md version-diff and conventional-commit mining.
 
 Optional mapping form adds target_page (default wiki/x-radar/<name>.md):
   repos:
-    sacra-backend: git@git.gft.com:cybersecurity-practice/sacra/sacra-backend.git
+    your-service: git@github.com:your-org/your-service.git
     ollama:
       remote: https://github.com/ollama/ollama.git
       target_page: wiki/x-radar/ollama.md
@@ -42,15 +42,24 @@ from pathlib import Path
 
 
 def find_vault_root() -> Path:
-    """Walk up for the vault root: wiki/ AND .git (a skills dir also has wiki/)."""
-    p = Path.cwd()
-    for parent in [p] + list(p.parents):
-        if (parent / "wiki").is_dir() and (parent / ".git").exists():
-            return parent
-    for parent in [p] + list(p.parents):
-        if (parent / "wiki").is_dir():
-            return parent
-    raise SystemExit("error: vault root not found — run inside a project with wiki/")
+    """Walk up for the vault root: wiki/ AND .git.
+
+    cwd first, then this script's own location. Both markers are required: a
+    skill directory named "wiki" exists under .agents/skills/, so wiki/ alone
+    stops the walk at the skills directory. There is no wiki/-only fallback —
+    resolving to the wrong root silently reads and writes the wrong tree.
+    """
+    for start in (Path.cwd().resolve(), Path(__file__).resolve()):
+        for parent in (start, *start.parents):
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
+                return parent
+    raise SystemExit(
+        "error: vault root not found — run inside a project with wiki/ and .git"
+    )
 
 
 VAULT = find_vault_root()

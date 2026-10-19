@@ -29,18 +29,23 @@ from pathlib import Path
 # ─── Configuration ───────────────────────────────────────────────────────────
 
 def find_repo_root() -> Path:
-    """Walk up from this file to the vault root (the directory holding wiki/).
+    """Walk up for the vault root: wiki/ AND .git.
 
-    This script lives inside a skill, so its depth below the repo root depends on
-    where the skill is installed. Counting .parent levels breaks the moment it
-    moves; looking for the marker does not.
+    cwd first, then this script's own location: the same script copied into a
+    project's .agents/skills/ must resolve that project, and a script living in
+    a separate checkout must still work when run from the vault it acts on.
+    Counting .parent levels breaks in both cases; the marker walk does not.
+    Both markers are required: there is a skill directory named "wiki" under
+    .agents/skills/, so wiki/ alone resolves to the skills directory.
     """
-    for parent in Path(__file__).resolve().parents:
-        # Both markers, not just wiki/: there is a skill directory named "wiki"
-        # under .agents/skills/, so the wiki/ marker alone resolves to the skills
-        # directory instead of the repo root.
-        if (parent / "wiki").is_dir() and (parent / ".git").exists():
-            return parent
+    for start in (Path.cwd().resolve(), Path(__file__).resolve()):
+        for parent in (start, *start.parents):
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
+                return parent
     raise SystemExit("repo root not found: no ancestor has both wiki/ and .git")
 
 
@@ -83,6 +88,8 @@ def load_config(root: Path, section: str) -> dict:
     if not isinstance(cfg, dict):
         raise SystemExit(f"{path} must contain a mapping at the top level")
     if section not in cfg:
+        if section == "wiki_publish" and "gitlab_wiki" in cfg:
+            return cfg["gitlab_wiki"]
         raise SystemExit(f"{path} has no '{section}' section")
     return cfg[section]
 
@@ -90,15 +97,15 @@ def load_config(root: Path, section: str) -> dict:
 REPO_ROOT = find_repo_root()
 WIKI_DIR = REPO_ROOT / "wiki"
 
-_GL = load_config(REPO_ROOT, "gitlab_wiki")
+_GL = load_config(REPO_ROOT, "wiki_publish")
 
 if not _GL.get("enabled", False):
     raise SystemExit(
-        "gitlab_wiki.enabled is false in kb-config.json — nothing to publish.\n"
+        "wiki_publish.enabled is false in kb-config.yaml — nothing to publish.\n"
         "Set it to true once repo is configured."
     )
 if not _GL.get("repo"):
-    raise SystemExit("kb-config.json gitlab_wiki section is missing: repo")
+    raise SystemExit("kb-config.yaml wiki_publish section is missing: repo")
 
 WIKI_REPO = _GL["repo"]
 WIKI_BRANCH = _GL.get("branch", "main")
@@ -108,7 +115,7 @@ WIKI_BRANCH = _GL.get("branch", "main")
 WIKI_TARGET = _GL.get("target", "github").lower()
 if WIKI_TARGET not in ("github", "gitlab"):
     raise SystemExit(
-        f"gitlab_wiki.target must be 'github' or 'gitlab', got '{WIKI_TARGET}'"
+        f"wiki_publish.target must be 'github' or 'gitlab', got '{WIKI_TARGET}'"
     )
 HOME_FILENAME = "Home.md" if WIKI_TARGET == "github" else "home.md"
 

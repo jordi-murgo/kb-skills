@@ -131,9 +131,11 @@ Scripts are **colocated with the skill that owns them**, at
 
 A script that lives inside a skill must not derive the repo root by counting
 `.parent` levels — its depth depends on where the skill is installed. Walk up
-looking for a marker instead, and require **both** `wiki/` and `.git`: there is
-a skill directory named `wiki`, so the `wiki/` marker alone stops the walk at
-the skills directory rather than the vault root.
+for markers instead: `wiki/` **and** `.git`, and reject a candidate whose
+`wiki/SKILL.md` exists. The first two markers alone are ambiguous — a skill
+directory is named `wiki`, and this upstream repository is itself a git
+checkout containing that directory. Walk from `cwd` first, then from the
+script's own location, and fail loudly when no candidate matches.
 
 `.agents/skills/wiki-lint/scripts/run-lint.py` aggregates the deterministic
 checks and resolves its sibling `lint-*.py` scripts relative to its own file.
@@ -175,87 +177,25 @@ is `1`. Use a fresh copy per fault, or the tests contaminate each other.
 | Source | Skill | Config section |
 |---|---|---|
 | M365 mail / Teams / SharePoint | `kb-m365-fetch` | `m365` |
-| Jira | `kb-jira-sync` | `jira` + `ATLASIAN_*` env |
+| Jira | `kb-jira-sync` | `jira` + `ATLASSIAN_*` env |
 | Wiki publish | `kb-publish` | `wiki_publish` |
 | Atlassian discovery (optional) | `twg` CLI | — (reads own auth) |
 
-All of them write to `.raw/`, which is immutable. `wiki-ingest` turns `.raw/`
-into wiki pages. Nothing else writes to `wiki/` from a pipeline.
+The acquirers write fetched/rendered source into `.raw/` (treated as immutable
+afterwards). `wiki-ingest` turns `.raw/` into wiki pages. No analysis tooling
+writes `wiki/`; the one exception is `run-lint.py`'s report under `wiki/meta/`
+(suppress with `--no-report`).
 
 ### 5.1 `twg` CLI — Atlassian discovery (optional)
 
-The [`twg` CLI](https://developer.atlassian.com/cloud/twg-cli/) provides graph
-traversal, semantic search (Rovo), and context discovery across Atlassian
-Cloud (Jira, Confluence, Bitbucket, Goals, Assets). It is an optional
-accelerator for `kb-jira-sync`'s reconcile phase — not a dependency.
+Optional accelerator for `kb-jira-sync`'s reconcile phase, not a dependency.
+Installation, project-local `TWG_CONFIG_DIR` credentials, `.gitignore` entries
+and verification steps live in the owning skill:
+[`kb-jira-sync` → Stage 0 — TWG Discovery](../kb-jira-sync/SKILL.md).
 
-**Installation:**
-
-```bash
-# Install twg (one-time, per machine)
-curl -fsSL https://teamwork-graph.atlassian.com/cli/install | bash
-
-# Verify
-twg doctor
-```
-
-**Project-local credentials with `TWG_CONFIG_DIR`:**
-
-TWG supports `TWG_CONFIG_DIR` to store credentials inside the project
-directory (gitignored) instead of the global `~/.config/twg/`. This isolates
-per-project Atlassian sessions and enables multi-site/multi-tenant workflows
-— each project can authenticate against a different Atlassian site without
-colliding with the global config.
-
-Setup (one-time, interactive — opens browser):
-
-```bash
-# 1. Create the project-local TWG config directory
-mkdir -p .twg
-
-# 2. Login against the project's Atlassian site
-TWG_CONFIG_DIR=.twg twg login --site <site-prefix>
-
-# 3. Verify
-TWG_CONFIG_DIR=.twg twg doctor
-```
-
-Then add to `.gitignore`:
-
-```gitignore
-# TWG CLI project-local credentials (OAuth tokens)
-.twg/
-```
-
-And add to `.env.local` (already gitignored):
-
-```bash
-# TWG CLI — project-local Atlassian credentials
-TWG_CONFIG_DIR=.twg
-```
-
-After that, all `twg` commands pick up `TWG_CONFIG_DIR` from the environment
-automatically. No `kb-config.yaml` section needed — TWG reads its own auth
-from the config dir and resolves the site from the stored credentials.
-
-**Verify it works:**
-
-```bash
-command -v twg >/dev/null 2>&1 && [ -f .twg/auth.conf ] && echo "twg ready" || echo "twg not found or not authenticated"
-twg jira workitem get <PROJECT-KEY>-1   # should return issue JSON
-twg rovo list-apps                      # should list connected apps
-```
-
-**Multi-site/multi-tenant:** each project gets its own `.twg/` with
-credentials for its Atlassian site. The global `~/.config/twg/` is never
-touched. To work against a different site, `cd` to that project and its
-`.twg/` credentials are used automatically.
-
-**What it adds:** see `kb-jira-sync` → Stage 0 — TWG Discovery.
-
-**When to skip it:** if the project has no Atlassian Cloud connection, or if
-the flat REST API import is sufficient. TWG is a discovery tool, not a
-pipeline — it does not write to `.raw/` or `wiki/`.
+Skip it when the project has no Atlassian Cloud connection or the flat REST
+import is sufficient. TWG is a discovery tool, not a pipeline: it writes
+neither `.raw/` nor `wiki/`.
 
 ## 6. `kb-config.yaml` — current supported contract
 
@@ -278,7 +218,7 @@ The canonical top-level sections are:
 | `wiki_publish` | generic `kb-publish` deployer | Publishing with `deploy-wiki.py` |
 | `m365` | `kb-m365-fetch` | Fetching M365 data |
 | `embeddings` | `wiki-search` | Optional; defaults are local |
-| `code_search` | `code-search` | Opcional; índice independiente de código |
+| `code_search` | `code-search` | Optional; independent code index |
 | `decisions` | `wiki-vetting` | Optional; defaults are local |
 | `repos` | `wiki-git-ingest` | Watching repositories |
 
@@ -353,21 +293,23 @@ It defaults to `[wiki]`; add `.` only to explicitly index the vault root.
 Git-ignored Markdown is excluded and a missing configured directory makes
 `wiki-search build` fail.
 
-`code_search` indexa código y configuración, no Markdown por defecto. Admite
-`source_dirs`, `extensions`, `model` y `endpoint`; modelo y endpoint heredan
-`embeddings` si se omiten. Todos sus datos van a `.cache/code-search/`.
-Respeta las reglas Git de cada submódulo. Instala el skill completo y ejecuta
-`python3 .agents/skills/code-search/scripts/code-search.py doctor --json`;
-si faltan dependencias, pregunta al usuario antes de instalarlas. No descarga
-modelos ni inicia servicios por su cuenta.
+`code_search` indexes code and configuration, not Markdown by default. It
+accepts `source_dirs`, `extensions`, `model` and `endpoint`; model and endpoint
+inherit from `embeddings` when omitted. All of its data lives in
+`.cache/code-search/`. It respects each submodule's Git rules. Install the whole
+skill and run
+`python3 .agents/skills/code-search/scripts/code-search.py doctor --json`; if
+dependencies are missing, ask the user before installing them. Never download
+models or start services on its own.
 
 ### Rules and defaults
 
 1. **Paths are relative to the vault root.** Absolute paths, `~`, and `..`
    traversal are rejected before network or filesystem writes.
-2. **No credentials, ever.** Jira reads `ATLASIAN_EMAIL` and `ATLASIAN_API_KEY`
-   from the environment or `.env.local`; macros such as `${WIKI_OLLAMA_URL}`
-   receive values from the process, `.env`, then `.env.local`.
+2. **No credentials, ever.** Jira reads `ATLASSIAN_EMAIL` and `ATLASSIAN_API_KEY`
+   from the environment, `.env`, or `.env.local` (scripts load both files; the
+   process environment wins); macros such as `${WIKI_OLLAMA_URL}` receive values
+   from the same sources.
 3. **`enabled` only applies to pipeline sections** — `jira`, `wiki_publish`,
    and `m365`. `embeddings`, `code_search`, `decisions`, and `repos` are optional
    sections without an `enabled` switch.
@@ -375,14 +317,13 @@ modelos ni inicia servicios por su cuenta.
    documented defaults; when an enabled pipeline needs a value, its script
    stops and names the missing key instead of guessing.
 
-### GitLab publisher compatibility
+### Wiki publisher compatibility
 
-`wiki_publish` is the canonical publishing key. Existing vaults that run the
-older `deploy-gitlab-wiki.py` or `push.sh` still require a separate
-`gitlab_wiki` section with `enabled`, `target`, `repo`, `branch`,
-`vpn_required`, `vpn_host`, and `vpn_private_prefix`. It is not an alias for
-`wiki_publish`; do not rename an existing GitLab deployment's key until those
-scripts are reconciled.
+`wiki_publish` is the only publishing key. `deploy-wiki.py`, `deploy-gitlab-wiki.py`
+and `push.sh` all read it; `push.sh` dispatches on `target` (`github` → `deploy-wiki.py`,
+`gitlab` → `deploy-gitlab-wiki.py`). Vaults that still carry the older `gitlab_wiki`
+section are read through a fallback, so no key rename is required — but new
+configuration belongs under `wiki_publish`.
 
 ### Formats and validation
 

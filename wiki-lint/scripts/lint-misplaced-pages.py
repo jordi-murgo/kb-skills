@@ -50,7 +50,11 @@ def find_vault_root() -> Path:
     cwd = Path(os.getcwd()).resolve()
     for start in (cwd, Path(__file__).resolve()):
         for parent in [start] + list(start.parents):
-            if (parent / "wiki").is_dir() and (parent / ".git").exists():
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
                 return parent
     raise SystemExit("error: vault root not found — run inside a project with wiki/")
 

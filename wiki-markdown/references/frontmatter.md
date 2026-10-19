@@ -10,7 +10,7 @@ Every page, no exceptions:
 
 ```yaml
 ---
-type: <source|entity|concept|domain|comparison|question|overview|meta>
+type: <source|entity|concept|domain|comparison|question|decision|overview|meta>
 title: "Human-Readable Title"
 created: 2026-04-07
 updated: 2026-04-07
@@ -21,15 +21,17 @@ status: <seed|developing|mature|evergreen>
 related:
   - "[[Other Page]]"
 sources:
-  - "[[.raw/articles/source-file.md]]"
+  - "[[source-page]]"          # a wiki page; raw files are cited inline with ^[.raw/...]
 ---
 ```
 
-**status values:**
-- `seed`: exists, barely populated
-- `developing`: has real content, not yet complete
-- `mature`: comprehensive, well-linked
-- `evergreen`: unlikely to need updates
+**status values:** `seed` (exists, barely populated) · `developing` (real
+content, not complete) · `mature` (comprehensive, well-linked) · `evergreen`
+(unlikely to need updates).
+
+`type: decision` overrides this enum with its own lifecycle (`active`,
+`superseded`, `rejected`) — see Type-Specific Additions. Do not mix the two in
+one page.
 
 ---
 
@@ -48,7 +50,7 @@ lang: de                 # ISO 639-1 code for the native language; default "en" 
 - `coined`: the wiki's internal vocabulary (project names, conventions).
 - `hybrid`: bilingual compound where the compound itself is the unit of meaning (`KI-Berater`, `AI-Engineer-Rolle-DE`).
 
-When `dnt_class` is set, the `aliases:` field **must** contain both the native form and the English gloss. Lint enforces this deterministically (`scripts/lint-terminology.py`).
+When `dnt_class` is set, the `aliases:` field **must** contain both the native form and the English gloss. Lint enforces this deterministically only where the vault ships the bilingual check (`lint-terminology.py`, not included in this repo); otherwise the rule is on you to apply.
 
 Translatable pages omit both fields. Default = translatable.
 
@@ -112,6 +114,13 @@ question: "The original query as asked."
 answer_quality: solid   # draft | solid | definitive
 ```
 
+### decision
+
+```yaml
+decision_date: YYYY-MM-DD
+status: active          # active | superseded | rejected  (override of the universal status enum)
+```
+
 ### domain
 
 ```yaml
@@ -127,5 +136,5 @@ page_count: 0
 2. Dates as `YYYY-MM-DD` strings, not ISO datetime.
 3. Lists always use the `- item` format, not inline `[a, b, c]`.
 4. Wikilinks in YAML fields must be quoted: `"[[Page Name]]"`.
-5. Keep `related` and `sources` as wikilinks, not plain URLs.
+5. Keep `related` and `sources` as wikilinks to wiki pages, not raw paths or URLs. Cite a raw file inline with the `^[.raw/path:L1-L2]` marker that `wiki-lint` validates.
 6. Update `updated` every time you edit the page content.

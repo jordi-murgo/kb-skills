@@ -113,6 +113,16 @@ Rules:
 - Wikilinks in YAML must be quoted: `"[[Page]]"`.
 - `tags` field: the wiki reads this as the tag list, searchable across the knowledge base.
 
+**MANDATORY — read [`references/frontmatter.md`](references/frontmatter.md) in
+full before creating a page of type `source`, `entity`, `concept`,
+`comparison`, `question` or `domain`, or when the vault uses bilingual
+terminology.** It holds the universal field set, the `status` enum, the
+type-specific additions and the `dnt_class`/`lang`/`aliases` rules. The snippet
+above is only the shape; the schema decides which fields are required.
+
+**Do NOT load** it for a page whose type and fields you are simply editing —
+the rules above are sufficient for that.
+
 ---
 
 ## Tags

@@ -17,22 +17,29 @@ import urllib.request
 from pathlib import Path
 
 def find_vault_root() -> Path:
-    """Walk up for the vault root: wiki/ AND .git (a skills dir also has wiki/)."""
+    """Walk up for the vault root: wiki/ AND .git, and wiki/ is not a skill.
+
+    A skill directory named "wiki" lives under .agents/skills/ and this
+    repository itself contains wiki/SKILL.md; either would otherwise satisfy
+    the wiki/ + .git test and silently resolve to the wrong tree.
+    """
     p = Path.cwd()
     for parent in [p] + list(p.parents):
-        if (parent / "wiki").is_dir() and (parent / ".git").exists():
-            return parent
-    for parent in [p] + list(p.parents):
-        if (parent / "wiki").is_dir():
+        if (
+            (parent / "wiki").is_dir()
+            and (parent / ".git").exists()
+            and not (parent / "wiki" / "SKILL.md").exists()
+        ):
             return parent
     p = Path(__file__).resolve()
     for parent in [p] + list(p.parents):
-        if (parent / "wiki").is_dir() and (parent / ".git").exists():
+        if (
+            (parent / "wiki").is_dir()
+            and (parent / ".git").exists()
+            and not (parent / "wiki" / "SKILL.md").exists()
+        ):
             return parent
-    for parent in [p] + list(p.parents):
-        if (parent / "wiki").is_dir():
-            return parent
-    raise SystemExit("error: vault root not found — run inside a project with wiki/")
+    raise SystemExit("error: vault root not found — run inside a project with wiki/ and .git")
 
 def load_env_files(root: Path) -> None:
     """Fill os.environ from <root>/.env then <root>/.env.local (later file wins;

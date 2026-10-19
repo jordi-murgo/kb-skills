@@ -95,7 +95,7 @@ Fill the brief skeleton in `references/brief-skeleton.md`. Every section is mand
 - **Stopping condition — two tiers** (W4): explicit `Must-have:` block (gates completion) and `Best-effort:` block ("if not found, write an Evidence-Gap section, do not fabricate").
 - **Phase-0 scout requirement** (W8): explicit instruction to spend the first hour verifying that the named sources still exist before deep research.
 - **Cost ceiling — three-factor justification** (W9): for `MAX_DEPTH`, `MAX_SOURCES`, `MAX_TOKENS_SYNTHESIS`, name the three inputs: sub-topic count, citation intensity, time-sensitivity.
-- **Output path** (W11): all outputs first land in `wiki/meta/draft-<task-id>/`. After human review, a separate skill (`agentic-knowledge-management:promote-draft`, future) moves them to their final paths.
+- **Output path** (W11): all outputs first land in `wiki/meta/draft-<task-id>/`. After human review, a human (or a project-local promotion step) moves them to their final paths; no promotion skill ships with this repo.
 - **Exemplar reference** (W10): link at least one existing high-quality wiki page as output-structure exemplar. For first-of-program briefs where no exemplar exists, mark explicitly: `Exemplar: TBD (this brief's output will become the program-{X} exemplar).`
 - **Deliverables** (W5): any deliverable inside `wiki/decisions/` must be named `Decision-Brief-…` (not `Decision-…`) and the brief must instruct the loop to add a `Decision Pending Human Review` marker to the frontmatter.
 
@@ -149,10 +149,10 @@ Return to the user:
 
 ## Hard-gate integration with `autoresearch`
 
-The `autoresearch` skill's no-argument flow (see `skills/autoresearch/SKILL.md`) is updated to refuse any task whose brief lacks `brief_version: 1`. The error surface is:
+The `autoresearch` skill's no-argument flow (see the `autoresearch` skill) refuses any task whose brief lacks `brief_version: 1`. The error surface is:
 
 > `Refusing to start R-YYYY-NNN: brief does not carry brief_version: 1.
-> Run the agentic-knowledge-management:research-brief skill in audit mode first.`
+> Run the research-brief skill in audit mode first.`
 
 The `autoresearch` skill change is a one-line frontmatter check, not a rewrite. See `references/conventions.md` § *Autoresearch integration* for the exact patch.
 

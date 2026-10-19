@@ -1,5 +1,9 @@
 # Per-project config lives in the consuming vault, never here
 kb-config.json
+kb-config.yaml
+kb-config.yml
+.env
+.env.local
 __pycache__/
 .cache/
 
@@ -8,3 +12,6 @@ __pycache__/
 .atl/
 .opendevbrowser/
 .opencode/
+.claude/
+.browser-session/
+.twg/

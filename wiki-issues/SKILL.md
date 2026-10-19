@@ -1,7 +1,7 @@
 ---
 name: wiki-issues
 description: Own the wiki/meta/OPEN-ISSUES.md issue stack end-to-end — push (synthesize session todos/insights into new stack entries with fresh IDs) and pop (verify and work exactly one top-of-stack issue). Triggers on "handoff", "synthesize issues", "file open issues", "fix issues", "work the top issue", "pop an issue", "open-issues stack".
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob
+allowed-tools: Read Write Edit Bash Grep Glob
 ---
 
 # wiki-issues — OPEN-ISSUES.md stack owner (push + pop)
@@ -12,8 +12,9 @@ issues onto it (the old `/wiki:handoff`), and popping-and-working exactly one is
 Deterministic core lives in a colocated script (`scripts/lint-open-issues.py`, ADR-0002); the LLM only
 synthesizes issue prose and judges verification.
 
-**Language:** German for chat and issue bodies; English only for code identifiers / commit conventions
-where the repo already established it.
+**Language:** write issue bodies and chat replies in the language the project's
+`AGENTS.md` establishes (English by default). Code identifiers and commit
+conventions stay English.
 
 ## Which flow?
 - Signals "handoff", "synthesize", "file issues", end-of-session capture → **push flow**.
@@ -52,9 +53,9 @@ meta line `**Priority:** … · **Pushed:** … · **WO:** …`. **Truth lives i
 ## Deterministic core — the validator
 `scripts/lint-open-issues.py` (ported from the battle-tested `ai-secondbrain` reference, colocated per
 ADR-0002) checks schema, stack↔body parity, `blocked_by` referential integrity + cycles,
-inconclusive pairing, aggregated-from consistency, and the 4-key sort. It is also wired into
-`scripts/run-lint.py` so `totals.error` gates CI. **Run it after every mutation** and before every
-commit: `python3 skills/wiki-issues/scripts/lint-open-issues.py --json wiki/meta/OPEN-ISSUES.md`.
+inconclusive pairing, aggregated-from consistency, and the 4-key sort. It is **not** wired into
+`scripts/run-lint.py`: run it explicitly after every mutation and before every commit:
+`python3 .agents/skills/wiki-issues/scripts/lint-open-issues.py --json wiki/meta/OPEN-ISSUES.md`.
 A non-zero error count means the file is broken — do not commit.
 
 ## Format-version guard (before ANY write)
@@ -167,8 +168,8 @@ The top issue is the **first stack item whose `blocked_by` is empty**. The array
 issue. The body detail is its `### I-2026-NNN` section. Note the id, title, and `WO:` anchor verbatim.
 
 Edges:
-- **Empty stack** → "Keine offenen Issues. Nichts zu tun." Abort, no commit.
-- **All items blocked** (every `blocked_by` non-empty) → "Stack hat nur blockierte Items: [<ids>]. Bitte Blocker zuerst auflösen." Abort, no commit.
+- **Empty stack** → "No open issues. Nothing to do." Abort, no commit.
+- **All items blocked** (every `blocked_by` non-empty) → "Stack holds only blocked items: [<ids>]. Resolve the blockers first." Abort, no commit.
 
 ### F3 — aggregation scan (MANDATORY, once, before any change)
 Ask: would **one** larger fix (plugin update, script rewrite, fundamental rework) deterministically
@@ -176,14 +177,14 @@ resolve the top issue **plus at least two others**?
 - **No** → continue to F4.
 - **Yes** → STOP and present the choice, wait for the answer (never pick a default, never aggregate without consent):
   ```
-  Aggregations-Vorschlag: Issues [<ids>] könnten gebündelt durch einen größeren Fix
-  ([Plugin-Update X / Skript-Rewrite Y / Refactor Z]) gemeinsam erledigt werden.
-  Optionen:
-    (1) Nur Top-Issue fixen ("<top-titel>").
-    (2) Aggregieren: die N Issues zu einem neuen Top-Issue "<Aggregations-Titel>"
-        zusammenfassen; die anderen entfernen. Der Fix wird NICHT jetzt gemacht —
-        das aggregierte Issue wird committet und später via pop bearbeitet.
-  Antwort (1) oder (2) bitte.
+  Aggregation proposal: issues [<ids>] could all be resolved by one larger fix
+  ([plugin update X / script rewrite Y / refactor Z]).
+  Options:
+    (1) Fix only the top issue ("<top title>").
+    (2) Aggregate: fold the N issues into a new top issue "<aggregation title>"
+        and remove the others. The fix is NOT done now — the aggregated issue is
+        committed and worked later via pop.
+  Answer (1) or (2).
   ```
   - **(1)** → F4 with the original top issue. **(2)** → jump to F7 (aggregation path). No answer → end without change.
 
@@ -193,32 +194,32 @@ Check the `WO:` anchor: file named → `ls`/`Read`, does it exist, is the sympto
 script/hook behavior → run it read-only and compare output to the claim. Four outcomes:
 
 - **F4a — already resolved** (symptom gone): remove the stack item **and** its `### I-…` body section
-  (both). Prepend a `wiki/log.md` entry (`## [YYYY-MM-DD] verify | resolved: <id> <titel>` with an
+  (both). Prepend a `wiki/log.md` entry (`## [YYYY-MM-DD] verify | resolved: <id> <title>` with an
   evidence line + one-sentence root cause). `updated:` = today. Check stack/body sync. → F5.
 - **F4b — stale but partly true** (line number / count drifted): do **not** remove. Patch the inaccurate
   part of the body section in place (fix the line number, update the count). Do not change `pushed`. No
   log entry (issue stays open). `updated:` = today. → F5.
 - **F4c — still real** (valid and not done): perform the fix with conventional tools (Edit/Write). Then
   remove the stack item + `### I-…` section (both), prepend a `wiki/log.md` entry
-  (`## [YYYY-MM-DD] fix | <id> <titel>` with Change + Why). `updated:` = today (both files). Check sync. → F5.
+  (`## [YYYY-MM-DD] fix | <id> <title>` with Change + Why). `updated:` = today (both files). Check sync. → F5.
 - **F4d — inconclusive** (verification without a clear result, e.g. sandbox / missing tool): do **not**
-  remove. Set `inconclusive_since: <today>` + `inconclusive_reason: "<grund>"` on the stack item; add a
-  `**Note:** inconclusive since <today> — <grund>` line to the body section (mirror). The sort invariant
+  remove. Set `inconclusive_since: <today>` + `inconclusive_reason: "<reason>"` on the stack item; add a
+  `**Note:** inconclusive since <today> — <reason>` line to the body section (mirror). The sort invariant
   places it last within its priority group so the next pop does not re-snag on it. `updated:` = today. → F5.
 
 ### F5 — commit discipline
-- **F4a (resolved, no code fix):** one commit `chore(meta): resolve "<id> <titel>"` (evidence + "removed from stack + body, logged in wiki/log.md").
-- **F4b (stale patch):** one commit `chore(meta): patch stale ref in "<id> <titel>"`.
-- **F4c (real fix):** up to two commits — (1) the code fix `fix(<scope>): <was>` or `feat(<scope>): <was>`; (2) the meta update `chore(meta): resolve "<id> <titel>"`.
-- **F4d (inconclusive):** one commit `chore(meta): mark "<id> <titel>" inconclusive (since <YYYY-MM-DD>)`.
+- **F4a (resolved, no code fix):** one commit `chore(meta): resolve "<id> <title>"` (evidence + "removed from stack + body, logged in wiki/log.md").
+- **F4b (stale patch):** one commit `chore(meta): patch stale ref in "<id> <title>"`.
+- **F4c (real fix):** up to two commits — (1) the code fix `fix(<scope>): <was>` or `feat(<scope>): <was>`; (2) the meta update `chore(meta): resolve "<id> <title>"`.
+- **F4d (inconclusive):** one commit `chore(meta): mark "<id> <title>" inconclusive (since <YYYY-MM-DD>)`.
 Never `--no-verify`, never `--amend` (build fresh commits for a clean history). Run `lint-open-issues`
 before every commit — zero errors required.
 
 ### F6 — final report (3 lines)
 ```
-Top-Issue: <id> <titel>.
+Top-Issue: <id> <title>.
 Outcome: <resolved | patched-stale | fixed | inconclusive | aggregated>.
-New top of stack: <id + titel of the next ready item>.
+New top of stack: <id + title of the next ready item>.
 ```
 Optional 4th line with the commit hash of the final change.
 
@@ -228,11 +229,11 @@ Optional 4th line with the commit hash of the final change.
    under the right `## <section>`. Set `aggregated_from: [<id-1>, …, <id-N>]`. `priority` = highest of the N.
 3. `updated:` = today. Check stack/body sync.
 4. Do **not** perform the fix — the point is consolidation, not immediate resolution.
-5. One commit `chore(meta): aggregate <N> issues into "<id> <aggregations-titel>"` (lists the replaced ids + one-sentence rationale).
+5. One commit `chore(meta): aggregate <N> issues into "<id> <aggregation title>"` (lists the replaced ids + one-sentence rationale).
 6. Final report as F6, Outcome = `aggregated`.
 
 ### pop edge cases
-- `stack` empty → "Keine offenen Issues." Abort, no commit.
+- `stack` empty → "No open issues." Abort, no commit.
 - All items blocked → list blocked ids, abort, no commit.
 - `blocked_by` points to a non-existent id → hard abort, `lint-open-issues` hint, no edit.
 - Stack/body out of sync → hard abort, no edit, lint hint.

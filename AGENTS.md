@@ -10,17 +10,21 @@ consume copies; changes that benefit every project belong here.
   that owns them** — a skill copied on its own into a project stays functional.
   No shared import module between skills; a helper that more than one skill
   needs gets inlined, not imported (precedent: `wiki-lint/scripts/run-lint.py`).
-- SKILL.md frontmatter: `name`, `description` with trigger phrases, optional
-  `argument-hint`. Body: terse, imperative, commands first, rationale only
-  where a future agent would otherwise break something.
+- SKILL.md frontmatter: `name`, `description` with trigger phrases in English
+  (the fleet's common language; non-English trigger phrases are additive, never
+  the only description), optional `argument-hint`, and `allowed-tools` as a
+  **space-separated** list when the skill restricts tools. Body: terse,
+  imperative, commands first, rationale only where a future agent would
+  otherwise break something.
 
 ## Hard rules
 
-1. **Vault-root resolution**: scripts walk up for `wiki/` AND `.git` — never
-   count `.parent` levels. Walk **cwd first, then `__file__`**: a script run
-   from a project resolves that project even when it lives in another repo
-   (this repo itself contains a `wiki/` *skill* directory plus `.git`, a false
-   positive for the `__file__`-first walk — that cost a debugging round).
+1. **Vault-root resolution**: scripts walk up for `wiki/` AND `.git`, and reject
+   a `wiki/` that contains `SKILL.md` (that is a skill directory, not a vault) —
+   never count `.parent` levels. Walk **cwd first, then `__file__`**: a script
+   run from a project resolves that project even when it lives in another repo.
+   There is no `wiki/`-only fallback: resolving to the wrong root fails
+   silently, which is worse than failing loudly.
 2. **Nothing project-specific in skill code**: models, endpoints, paths and
    watch lists come from `kb-config.yaml` at the vault root or environment
    variables, with boring defaults. Copy `kb-config.example.yaml` when adding a
@@ -36,8 +40,13 @@ consume copies; changes that benefit every project belong here.
 4. **Python stdlib only** for the wiki tooling (urllib, json, sqlite3, hashlib,
    argparse, re). PyYAML is acceptable only for reading `kb-config.yaml`, with
    the install command in the error message (precedent: `kb-jira-sync`).
-5. **Never write `wiki/**` or `.raw/**`** from tooling. Derived state goes to
-   `.cache/` — it is a cache and must be deletable at any time.
+5. **Never write `wiki/**` or `.raw/**`** from analysis tooling. Derived state
+   (indexes, mirrors, scan state) goes to `.cache/` — it is a cache and must be
+   deletable at any time. Two deliberate exceptions, both content-producing
+   pipelines rather than derived state: the acquirers (`kb-jira-sync`,
+   `kb-m365-fetch`, `doc-pipeline`) write fetched/rendered source into `.raw/`,
+   and `run-lint.py` writes its human-readable report to `wiki/meta/` (suppress
+   with `--no-report`). Nothing else writes those trees.
 
 ## System One decision endpoints (wiki-vetting, wiki-git-ingest)
 

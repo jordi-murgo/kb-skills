@@ -31,7 +31,6 @@ children:
     page_missing: false
   # ... one record per log entry. No dedupe by page.
 related:
-  - "[[DragonScale Memory]]"
   - "[[log]]"
   - "[[index]]"
 ---
@@ -58,7 +57,7 @@ One row per log entry. Row count must equal `entry_count` in frontmatter and the
 
 | Date | Op | Title | Page | Summary (extractive) |
 |---|---|---|---|---|
-| 2026-04-23 | save | DragonScale Memory v0.2 — post-adversarial-review | [[DragonScale Memory]] | Adversarial-review rewrite; 7/7 critiques accepted after one surgical fix. |
+| 2026-04-23 | save | Example entry title | [[Some Page]] | One-sentence outcome, verbatim-supportable from the child entry. |
 | 2026-04-15 | save | SEO v1.9.0 Slides and GitHub Release | [[2026-04-15-slides-and-release-session]] | 15-slide HTML deck, v1.9.0 tagged, GitHub release with PDF asset. |
 <!-- one row per log entry; no dedupe by page -->
 ```
@@ -118,7 +117,7 @@ The `Child Pages` section is **deduped by page**: one wikilink per unique target
 
 ## Related
 
-- [[DragonScale Memory]] - fold-operator spec
+- [[log]] - source of the folded entries
 - [[log]] - source entries
 - [[index]] - vault catalog
 ```

@@ -1,9 +1,12 @@
 ---
 name: autoresearch
 description: >
-  Autonomous iterative research loop. Takes a topic, runs web searches, fetches
+  Autonomous iterative research loop: takes a topic, runs web searches, fetches
   sources, synthesizes findings, and files everything into the wiki as
-  structured pages. Triggers on: "/autoresearch", "autoresearch",
+  structured pages. Use when the user wants research executed and filed, not
+  just planned: use research-brief to write or audit a brief, vampirize to judge
+  whether an external artifact is reusable, and wiki-search to answer from pages
+  already in the vault. Triggers on: "/autoresearch", "autoresearch",
   "research [topic]", "deep dive into [topic]", "investigate [topic]",
   "find everything about [topic]", "research and file", "go research",
   "build a wiki on".
@@ -49,6 +52,11 @@ else
 fi
 ```
 
+**`scripts/lint-deps.py` does not ship with this skill.** When it is absent,
+queue mode is unavailable: say so in one line ("queue mode needs
+`scripts/lint-deps.py`, which is not installed") and continue with section C/D.
+Never hand-verify the DAG in its place and never claim the queue was validated.
+
 When `QUEUE_MODE=1`:
 
 1. **Concurrency check**: refuse to start if any row already has `status: in-progress`. Surface:
@@ -64,12 +72,12 @@ When `QUEUE_MODE=1`:
    - **Explicit task-ID invocation** (section A routing here): refuse and surface:
      ```
      Refusing to start R-YYYY-NNN: brief is missing or _to brief_.
-     Run the agentic-knowledge-management:research-brief skill in construct mode to produce a brief first.
+     Run the research-brief skill in construct mode to produce a brief first.
      ```
 6. **Brief-version enforcement** (W11 gate, see `references/program.md` and the research-brief skill): read the brief file referenced by the queue row. Parse its frontmatter. If `brief_version` is absent or `!= 1`, surface:
    ```
    Refusing to start R-YYYY-NNN: brief does not carry brief_version: 1.
-   Run the agentic-knowledge-management:research-brief skill in audit mode to validate and bring it to current schema.
+   Run the research-brief skill in audit mode to validate and bring it to current schema.
    ```
    - **No-args invocation**: skip to the next ready ID after surfacing the message (do not silently skip — the user must see which task was unrunnable).
    - **Explicit task-ID invocation**: refuse and stop. Do not fall through to free-text mode.
@@ -88,7 +96,7 @@ When `QUEUE_MODE=1`:
 10. **On topic override**: set `QUEUE_MODE=0` for this run, do not touch the queue, use the typed text as topic.
 11. **On 'cancel'**: ask via section D (user-chosen).
 
-**During the loop**: never edit `wiki/meta/research-queue.md`'s row schema or other rows. Only the active row's `status`, `started`, `finished`, `updated`, and `deliverables` may be touched. **Never edit eval files** (mirrors the [[Self-Improvement-Loop]] principle: the agenda is the review loop).
+**During the loop**: never edit `wiki/meta/research-queue.md`'s row schema or other rows. Only the active row's `status`, `started`, `finished`, `updated`, and `deliverables` may be touched. **Never edit eval files** (the agenda is the review loop: an agent must not rewrite its own criteria).
 
 **On loop completion (success)**:
 - Flip the row's `status: in-progress` → `status: done`.
@@ -101,7 +109,7 @@ When `QUEUE_MODE=1`:
 - Log the failure mode to `wiki/log.md` under `Queue-task: R-YYYY-NNN — failed (<reason>)`.
 
 ### C. Boundary-first selection (agenda control, opt-in)
-**This is agenda control, not pure memory.** DragonScale Memory.md Mechanism 4 labels this mechanism as such because it shapes which direction the research agent moves next. Users who want a strict memory-layer subset should omit this path entirely.
+**This is agenda control, not pure memory.** This mechanism is labeled agenda control (rather than memory) because it shapes which direction the research agent moves next. Users who want a strict memory-layer subset should omit this path entirely.
 
 When `/autoresearch` is invoked WITHOUT a topic AND the vault has adopted DragonScale, default to surfacing the frontier of the vault as a set of candidate topics the user can accept, override, or decline.
 
@@ -114,6 +122,11 @@ else
   BOUNDARY_MODE=0
 fi
 ```
+
+**`scripts/boundary-score.py` does not ship with this skill.** When it is
+absent, boundary mode is unavailable: say so in one line and fall through to
+section D. Do not score the frontier by hand and present it as the helper's
+output.
 
 When `BOUNDARY_MODE=1` AND `QUEUE_MODE=0`:
 
@@ -164,7 +177,7 @@ Max rounds: 3 (as set in program.md). Stop when depth is reached or max rounds h
 
 The base output path differs by invocation mode:
 
-- **`QUEUE_MODE=1`** (task picked from research-queue via no-args or explicit task ID): outputs first land under `wiki/meta/draft-<task-id>/` per the brief's W11 instruction. Sub-paths mirror the final structure: `wiki/meta/draft-<task-id>/sources/`, `wiki/meta/draft-<task-id>/concepts/`, `wiki/meta/draft-<task-id>/entities/`, `wiki/meta/draft-<task-id>/questions/`. A separate skill (`agentic-knowledge-management:promote-draft`, planned) or manual review promotes drafts to final paths after a human pass.
+- **`QUEUE_MODE=1`** (task picked from research-queue via no-args or explicit task ID): outputs first land under `wiki/meta/draft-<task-id>/` per the brief's W11 instruction. Sub-paths mirror the final structure: `wiki/meta/draft-<task-id>/sources/`, `wiki/meta/draft-<task-id>/concepts/`, `wiki/meta/draft-<task-id>/entities/`, `wiki/meta/draft-<task-id>/questions/`. Manual review (no promotion skill ships with this repo) promotes drafts to final paths after a human pass.
 - **`QUEUE_MODE=0` ad-hoc topic** (free-text argument, boundary-mode pick, or user-chosen): outputs first land under `wiki/meta/draft-adhoc-<slug>-<YYYY-MM-DD-HHMM>/`. No brief = short default cap: `MAX_DEPTH: 1`, `MAX_SOURCES: 5`, overriding `references/program.md` defaults. Before starting the loop, surface one line: *"Ad-hoc mode uses a short default cap. For deeper runs, draft a brief via the research-brief skill and add it to wiki/meta/research-queue.md."*
 
 **Path substitution rule**: wherever the section below says "create `wiki/sources/Foo.md`", "create `wiki/concepts/Bar.md`", etc., prepend the active mode's base prefix to the path. The page templates (frontmatter, body structure) are identical across modes — only the path differs.

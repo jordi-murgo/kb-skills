@@ -1,6 +1,6 @@
 ---
 name: wiki-sync
-description: "Detect wiki pages whose file-linked claims went stale after repo commits: scans for repo-file references, compares each file's last commit with the page's updated date. Triggers on: sync the wiki, what claims are stale, after commits check wiki, staleness report."
+description: "Detect wiki pages whose file-linked claims went stale after commits in THIS repo: scans for repo-file references, compares each file's last commit with the page's updated date. Use wiki-git-ingest instead for changes in watched UPSTREAM repos. Triggers on: sync the wiki, what claims are stale, after commits check wiki, staleness report."
 argument-hint: "[--since] [--commit]"
 ---
 
@@ -17,7 +17,9 @@ python3 scripts/wiki-sync.py --commit        # report + write the sync point
 python3 scripts/wiki-sync.py --json
 ```
 
-State at `.cache/sync.json`. Read-only for `wiki/**` and `.raw/**`.
+State at `.cache/sync.json`. Read-only for `wiki/**` and `.raw/**`. Run it from
+inside the vault: the script resolves the root by walking up for `wiki/` + `.git`
+and refuses to run outside one.
 
 ## Workflow
 

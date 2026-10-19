@@ -13,11 +13,23 @@ from pathlib import Path
 
 
 def find_wiki_root(start: str = ".") -> str:
-    p = Path(start).resolve()
-    for parent in [p] + list(p.parents):
-        if (parent / "wiki").is_dir():
-            return str(parent)
-    return str(p)
+    """Walk up for the vault root: wiki/ AND .git.
+
+    Both markers are required. There is a skill directory named "wiki" under
+    .agents/skills/, so wiki/ alone stops the walk at the skills directory
+    instead of the vault root. cwd first, then this script's own location.
+    """
+    for base in (Path(start).resolve(), Path(__file__).resolve()):
+        for parent in (base, *base.parents):
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
+                return str(parent)
+    raise SystemExit(
+        "error: vault root not found — run inside a project with wiki/ and .git"
+    )
 
 
 META_PAGES = {"index", "log", "hot", "overview", "_index", "dashboard"}
@@ -125,6 +137,7 @@ def main():
 
     # Deduplicate: report each unique file once, keyed by its canonical stem.
     seen: set[str] = set()
+    checked = 0
     orphans = []
     for slug, rel_path in sorted(pages.items()):
         if rel_path in seen:
@@ -133,6 +146,8 @@ def main():
         # A page is meta if its canonical stem is a meta page.
         if is_meta_page(stem):
             continue
+        seen.add(rel_path)
+        checked += 1
         # Check inbound on the canonical stem key and all path variants.
         rel_to_wiki = rel_path[len("wiki/"):] if rel_path.startswith("wiki/") else rel_path
         rel_stem = str(Path(rel_to_wiki).with_suffix(""))
@@ -141,7 +156,6 @@ def main():
             or len(inbound.get(rel_stem, set())) > 0
         )
         if not has_inbound:
-            seen.add(rel_path)
             orphans.append((stem, rel_path))
 
     if orphans:
@@ -150,8 +164,7 @@ def main():
             print(f"  [[{slug}]] ({rel_path}) — no inbound links")
         sys.exit(1)
     else:
-        total = len(set(pages.values())) - len(META_PAGES)
-        print(f"OK: no orphan pages ({total} content pages checked)")
+        print(f"OK: no orphan pages ({checked} content pages checked)")
         sys.exit(0)
 
 

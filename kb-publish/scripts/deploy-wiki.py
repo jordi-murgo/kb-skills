@@ -29,18 +29,23 @@ from pathlib import Path
 # ─── Configuration ───────────────────────────────────────────────────────────
 
 def find_repo_root() -> Path:
-    """Walk up from this file to the vault root (the directory holding wiki/).
+    """Walk up for the vault root: wiki/ AND .git.
 
-    This script lives inside a skill, so its depth below the repo root depends on
-    where the skill is installed. Counting .parent levels breaks the moment it
-    moves; looking for the marker does not.
+    cwd first, then this script's own location: the same script copied into a
+    project's .agents/skills/ must resolve that project, and a script living in
+    a separate checkout must still work when run from the vault it acts on.
+    Counting .parent levels breaks in both cases; the marker walk does not.
+    Both markers are required: there is a skill directory named "wiki" under
+    .agents/skills/, so wiki/ alone resolves to the skills directory.
     """
-    for parent in Path(__file__).resolve().parents:
-        # Both markers, not just wiki/: there is a skill directory named "wiki"
-        # under .agents/skills/, so the wiki/ marker alone resolves to the skills
-        # directory instead of the repo root.
-        if (parent / "wiki").is_dir() and (parent / ".git").exists():
-            return parent
+    for start in (Path.cwd().resolve(), Path(__file__).resolve()):
+        for parent in (start, *start.parents):
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
+                return parent
     raise SystemExit("repo root not found: no ancestor has both wiki/ and .git")
 
 

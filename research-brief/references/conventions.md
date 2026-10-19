@@ -2,7 +2,7 @@
 
 The twelve named failure modes a research brief must avoid. Derived from a session retrospective on 2026-05-27 covering four briefs produced without these conventions. Each entry: failure mode, why it breaks research, the rule that prevents it, the gate level, and the pre-flight check.
 
-> All references to "the loop" mean the `agentic-knowledge-management:autoresearch` skill that consumes the brief.
+> All references to "the loop" mean the `autoresearch` skill that consumes the brief.
 
 ---
 
@@ -167,7 +167,7 @@ The justification is two sentences below the ceiling block. Without it, the ceil
 
 **Why it breaks research**: No human-review gate. The wiki becomes a write-once, never-curated artifact store.
 
-**Rule**: All loop outputs first land in `wiki/meta/draft-<task-id>/<original-path>`. A separate skill (`agentic-knowledge-management:promote-draft`, planned) handles human review and move to final path. Until that skill exists, the user must manually verify drafts before moving them.
+**Rule**: All loop outputs first land in `wiki/meta/draft-<task-id>/<original-path>`. No promotion skill ships with this repo: the user verifies drafts and moves them to their final path.
 
 **Gate**: **hard**.
 
@@ -196,7 +196,7 @@ The justification is two sentences below the ceiling block. Without it, the ceil
 
 ## Autoresearch integration
 
-The `autoresearch` skill must refuse to start a task whose brief lacks `brief_version: 1`. The minimum change to `skills/autoresearch/SKILL.md` is a single check inside the no-argument flow, before the loop begins:
+The `autoresearch` skill must refuse to start a task whose brief lacks `brief_version: 1`. The change in the `autoresearch` skill is a single check inside the no-argument flow, before the loop begins:
 
 ```
 Before flipping status to in-progress:
@@ -204,7 +204,7 @@ Before flipping status to in-progress:
 2. Parse frontmatter. If `brief_version` is absent or != 1:
    Print:
      Refusing to start R-YYYY-NNN: brief does not carry brief_version: 1.
-     Run the agentic-knowledge-management:research-brief skill in audit mode first.
+     Run the research-brief skill in audit mode first.
    Exit.
 3. Otherwise proceed.
 ```

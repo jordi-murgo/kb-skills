@@ -60,6 +60,12 @@ is down. Set `vpn_required: false` for a wiki outside a corporate network.
 .agents/skills/kb-publish/scripts/push.sh --force    # extra args are forwarded to git push
 ```
 
+`push.sh` reads the same `wiki_publish` section and picks the deploy script from
+`target`: `github` runs `deploy-wiki.py`, `gitlab` runs `deploy-gitlab-wiki.py`.
+It resolves the vault by walking up from the working directory (then from its
+own location) for `wiki/` + `.git` where `wiki/` is not a skill (no `wiki/SKILL.md`),
+so run it from inside the vault.
+
 If it exits with "VPN NO activa", stop. Do not work around the check —
 it exists because pushing to a resolvable-but-wrong host is worse than failing.
 

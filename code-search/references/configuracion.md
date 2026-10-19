@@ -1,59 +1,96 @@
-# Configurar code-search
+# Configuring code-search
 
-El script se puede copiar con el skill completo: no importa módulos de otros skills. Requiere Python 3.10+, Git y SQLite con FTS5. PyYAML solo es necesario si la configuración es YAML.
+The script can be copied together with the whole skill: it imports no modules
+from other skills. It needs Python 3.10+, Git, and SQLite with FTS5. PyYAML is
+only required when the configuration is YAML.
 
-## Configuración
+## Configuration
 
-Añade una sección al `kb-config.yaml` del vault:
+Add a section to the vault's `kb-config.yaml`:
 
 ```yaml
 code_search:
   source_dirs:
     - projects
-  # Opcional: limitar idiomas y configuración; los valores sustituyen la lista predeterminada.
+  # Optional: restrict languages and configuration; values replace the default list.
   # extensions: [.java, .xml, .yaml, .json, .toml, .sh]
-  # Opcionales: heredan embeddings.model y embeddings.endpoint si se omiten.
+  # Optional: inherit embeddings.model and embeddings.endpoint when omitted.
   # model: bge-m3
   # endpoint: ${WIKI_OLLAMA_URL}
 ```
 
-| Clave | Contrato |
+| Key | Contract |
 |---|---|
-| `source_dirs` | Lista no vacía de directorios relativos al vault; por defecto `[projects]`. `.` incluye la raíz solamente si se indica. Se rechazan rutas absolutas, `~`, `..`, directorios ausentes y enlaces simbólicos. |
-| `extensions` | Lista no vacía de sufijos con punto. Predeterminados: `.java`, `.py`, `.ts`, `.tsx`, `.js`, `.jsx`, `.go`, `.rs`, `.c`, `.h`, `.cpp`, `.hpp`, `.cs`, `.kt`, `.kts`, `.swift`, `.sh`, `.ps1`, `.sql`, `.yaml`, `.yml`, `.json`, `.xml`, `.toml`. Incluye pruebas y configuración, no solo código de producción. Markdown requiere `.md` explícito. |
-| `model` | Valor explícito → `embeddings.model` → `bge-m3`. |
-| `endpoint` | URL base HTTP(S), sin credenciales, query ni fragmento; se añade `/api/embed`. Valor explícito → `embeddings.endpoint` → `http://127.0.0.1:11434`. |
+| `source_dirs` | Non-empty list of directories relative to the vault; defaults to `[projects]`. `.` includes the root only when stated. Absolute paths, `~`, `..`, missing directories and symlinks are rejected. |
+| `extensions` | Non-empty list of suffixes including the dot. Defaults: `.java`, `.py`, `.ts`, `.tsx`, `.js`, `.jsx`, `.go`, `.rs`, `.c`, `.h`, `.cpp`, `.hpp`, `.cs`, `.kt`, `.kts`, `.swift`, `.sh`, `.ps1`, `.sql`, `.yaml`, `.yml`, `.json`, `.xml`, `.toml`. Includes tests and configuration, not only production code. Markdown needs an explicit `.md`. |
+| `model` | Explicit value → `embeddings.model` → `bge-m3`. |
+| `endpoint` | HTTP(S) base URL, without credentials, query or fragment; `/api/embed` is appended. Explicit value → `embeddings.endpoint` → `http://127.0.0.1:11434`. |
 
-Las macros `${VAR}` y `${VAR:-default}` se expanden recursivamente. Precedencia: entorno del proceso → `.env.local` → `.env`; estos ficheros solo aportan valores a las macros. La selección `embeddings.source_dirs` no modifica `code_search.source_dirs`.
+`${VAR}` and `${VAR:-default}` macros expand recursively. Precedence: process
+environment → `.env.local` → `.env`; those files only supply values to macros.
+The `embeddings.source_dirs` selection does not change `code_search.source_dirs`.
 
-El script resuelve la raíz buscando `wiki/` y `.git`, primero desde el directorio de trabajo. Para invocarlo desde fuera:
+The script resolves the root by looking for `wiki/` and `.git`, starting from the
+working directory. To invoke it from outside:
 
 ```bash
 python3 <skill>/scripts/code-search.py --root <vault> doctor --json
 ```
 
-## Datos derivados y cobertura
+## Derived data and coverage
 
-- Única ubicación de datos propios: `.cache/code-search/index.db`. No contiene configuración editable y se puede eliminar para reconstruir desde el YAML.
-- Asegura que `.cache/` esté en `.gitignore`; no versiones fragmentos ni vectores derivados.
-- Se aplican las reglas Git reales, incluidas negaciones y archivos ya versionados que coincidan con patrones ignorados. Cada repositorio anidado o submódulo usa sus propias reglas Git.
-- Nunca se recorren `.git` ni `.cache`; no se siguen enlaces simbólicos. Se contabilizan los archivos binarios y no UTF-8 omitidos sin mostrar su contenido.
-- Fragmentación por líneas con solapamiento, límite de 80 líneas/4000 caracteres. Las líneas individuales mayores se dividen conservando su número; no es parsing AST.
-- `build` reutiliza los embeddings de archivos cuyo SHA-256 no cambió y retira archivos borrados, ignorados o excluidos por configuración. Cambiar modelo/endpoint exige regenerar vectores. Un fallo del endpoint o de la transacción conserva el último índice válido.
-- `status` compara la configuración y el contenido actual con el índice. Consulta `files`, `chunks`, `embedded`, `dimensions`, `new_paths`, `stale_paths` y `needs_build`.
+- The only location for the engine's own data is `.cache/code-search/index.db`.
+  It holds no editable configuration and can be deleted to rebuild from YAML.
+- Ensure `.cache/` is in `.gitignore`; never version fragments or derived vectors.
+- Real Git rules apply, including negations and already-tracked files that match
+  ignored patterns. Every nested repository or submodule uses its own Git rules.
+- `.git` and `.cache` are never traversed; symlinks are not followed. Binary and
+  non-UTF-8 files skipped are counted without showing their content.
+- Line-based chunking with overlap, capped at 80 lines / 4000 characters.
+  Individual longer lines are split while preserving their number; this is not
+  AST parsing.
+- `build` reuses embeddings for files whose SHA-256 did not change and removes
+  deleted, ignored or config-excluded files. Changing model/endpoint requires
+  regenerating vectors. An endpoint or transaction failure keeps the last valid
+  index.
+- `status` compares current configuration and content against the index. Read
+  `files`, `chunks`, `embedded`, `dimensions`, `new_paths`, `stale_paths` and
+  `needs_build`.
 
-## Dependencias y consentimiento
+## Dependencies and consent
 
-`doctor --json` es local y no escribe ni contacta al endpoint. Devuelve `ok`, `dependencies`, `missing_dependencies` con `name`/`install_hint`, y `errors`. Si no está listo, termina con código 2.
+`doctor --json` is local: it writes nothing and does not contact the endpoint.
+It returns `ok`, `dependencies`, `missing_dependencies` with
+`name`/`install_hint`, and `errors`. If not ready, it exits with code 2.
 
-Ante una dependencia ausente, el agente debe preguntar: «Falta <dependencia>. ¿Deseas instalarla con <comando sugerido>?». No ejecute el comando hasta obtener autorización. Ofrece continuar sin esa capacidad si no es necesaria; no modifiques Python, Git ni SQLite de forma automática.
+When a dependency is missing, the agent must ask: "Missing <dependency>. Install
+it with <suggested command>?" Do not run the command before authorization. Offer
+to continue without that capability when it is not needed; never modify Python,
+Git or SQLite automatically.
 
-Si el endpoint no está disponible, corrige la configuración o pregunta antes de habilitar un servicio. No hagas `ollama pull`, no descargues modelos y no cambies de proveedor por tu cuenta. BM25 puede consultar un índice ya construido sin endpoint; construir un índice vectorial sí lo requiere.
+If the endpoint is unavailable, fix the configuration or ask before enabling a
+service. Do not run `ollama pull`, do not download models and do not switch
+providers on your own. BM25 can query an already-built index without an
+endpoint; building a vector index does require one.
 
-LSP, AST y CodeGraph son complementos opcionales: el script no los instala y `doctor` no diagnostica sus cadenas de herramientas; comprueba las dependencias básicas Git, SQLite/FTS5 y PyYAML cuando corresponde, además de la configuración. Consulta CodeGraph si ya está disponible e indexado; si no, solicita autorización explícita antes de instalarlo, modificar permisos MCP o ejecutar `init` para el proyecto elegido. `init` crea y construye el grafo externo en `<proyecto>/.codegraph/`, excepción autorizada al estado del motor en `.cache/code-search/`; exige excluirlo de Git en cada repositorio o submódulo. No construyas grafos indiscriminados del vault. Consulta [instalación y uso de herramientas complementarias](herramientas-complementarias.md).
+LSP, AST and CodeGraph are optional companions: the script does not install
+them, and `doctor` does not diagnose their toolchains. It checks the basic
+dependencies Git, SQLite/FTS5 and PyYAML when applicable, plus the
+configuration. Consult CodeGraph if it is already available and indexed; if not,
+request explicit authorization before installing it, modifying MCP permissions
+or running `init` for the chosen project. `init` creates and builds the external
+graph at `<project>/.codegraph/`, the authorized exception to engine state in
+`.cache/code-search/`; it must be excluded from Git in every repository or
+submodule. Never build indiscriminate vault-wide graphs. See
+[installing and using companion tools](herramientas-complementarias.md).
 
-## Registro local
+## Local registration
 
-Conserva el skill en `.agents/skills/code-search/` y, para Claude Code, crea el puente relativo `.claude/skills/code-search -> ../../.agents/skills/code-search`. Si existe Gentle AI, actualiza su índice con `gentle-ai skill-registry refresh`.
+Keep the skill in `.agents/skills/code-search/` and, for Claude Code, create the
+relative bridge `.claude/skills/code-search -> ../../.agents/skills/code-search`.
+If Gentle AI is present, refresh its index with `gentle-ai skill-registry refresh`.
 
-Un runtime puede conservar una lista de skills tomada al iniciar la sesión. Si `skill://code-search` aún no lo reconoce, carga `.agents/skills/code-search/SKILL.md` por su ruta real; no reinstales el skill ni regeneres el índice de código para corregir esa caché del runtime.
+A runtime may keep a skill list taken at session start. If `skill://code-search`
+does not recognize it yet, load `.agents/skills/code-search/SKILL.md` by its real
+path; do not reinstall the skill or rebuild the code index to work around that
+runtime cache.

@@ -47,7 +47,11 @@ def find_repo_root() -> Path:
         # Both markers, not just wiki/: there is a skill directory named "wiki"
         # under .agents/skills/, so the wiki/ marker alone resolves to the skills
         # directory instead of the repo root.
-        if (parent / "wiki").is_dir() and (parent / ".git").exists():
+        if (
+            (parent / "wiki").is_dir()
+            and (parent / ".git").exists()
+            and not (parent / "wiki" / "SKILL.md").exists()
+        ):
             return parent
     raise SystemExit("repo root not found: no ancestor has both wiki/ and .git")
 

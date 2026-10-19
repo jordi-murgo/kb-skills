@@ -12,14 +12,28 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Both wiki/ AND .git are required: there is a skill directory named "wiki"
 # under .agents/skills/, so the wiki/ marker alone resolves to the skills
 # directory instead of the repo root.
-REPO_DIR="$SCRIPT_DIR"
-while [ "$REPO_DIR" != "/" ] && ! { [ -d "$REPO_DIR/wiki" ] && [ -e "$REPO_DIR/.git" ]; }; do
-    REPO_DIR="$(dirname "$REPO_DIR")"
-done
-if ! { [ -d "$REPO_DIR/wiki" ] && [ -e "$REPO_DIR/.git" ]; }; then
-    echo "❌ Repo root not found: no ancestor has both wiki/ and .git"
+# cwd first, then the script's own location: running from a vault must act on
+# that vault even when the script itself lives in a separate kb-skills checkout
+# (which has its own wiki/ + .git and would otherwise win).
+find_repo_dir() {
+    local start
+    for start in "$PWD" "$SCRIPT_DIR"; do
+        local dir="$start"
+        while [ "$dir" != "/" ]; do
+            if [ -d "$dir/wiki" ] && [ -e "$dir/.git" ] && [ ! -f "$dir/wiki/SKILL.md" ]; then
+                printf '%s\n' "$dir"
+                return 0
+            fi
+            dir="$(dirname "$dir")"
+        done
+    done
+    return 1
+}
+
+REPO_DIR="$(find_repo_dir)" || {
+    echo "❌ Repo root not found: no ancestor of $PWD or $SCRIPT_DIR has both wiki/ and .git"
     exit 1
-fi
+}
 cd "$REPO_DIR"
 
 # Project configuration — nothing project-specific lives in this script
@@ -36,7 +50,9 @@ if [ ! -f "$CFG" ]; then
     echo "   Copy kb-config.example.yaml from the kb-skills repo and fill it in."
     exit 1
 fi
-# Read a value from gitlab_wiki, supporting both YAML and legacy JSON.
+# Read a value from wiki_publish, supporting both YAML and legacy JSON.
+# Existing GitLab deployments may still carry the older `gitlab_wiki` section;
+# it is read as a fallback so those vaults keep working without a rename.
 read_cfg() { python3 -c "
 import sys
 path='$CFG'
@@ -49,18 +65,19 @@ else:
         cfg=yaml.safe_load(open(path))
     except ImportError:
         sys.exit('❌ PyYAML not installed (python3 -m pip install pyyaml)')
-cfg=cfg.get('gitlab_wiki',{})
+cfg=(cfg or {}).get('wiki_publish') or (cfg or {}).get('gitlab_wiki') or {}
 v=cfg.get('$1', '$2')
 print('' if v is None else ('true' if v is True else ('false' if v is False else v)))"; }
 
 VPN_REQUIRED=$(read_cfg vpn_required true)
 VPN_HOST=$(read_cfg vpn_host "")
 VPN_PREFIX=$(read_cfg vpn_private_prefix "10.")
+WIKI_TARGET=$(read_cfg target "github")
 
 # Verify VPN — the host must resolve to a private IP
 if [ "$VPN_REQUIRED" = "true" ]; then
     if [ -z "$VPN_HOST" ]; then
-        echo "❌ gitlab_wiki.vpn_required is true but vpn_host is missing in kb-config.yaml"
+        echo "❌ wiki_publish.vpn_required is true but vpn_host is missing in kb-config.yaml"
         exit 1
     fi
     GIT_IP=$(host "$VPN_HOST" 2>/dev/null | awk '/has address/ {print $NF}' | head -1)
@@ -80,14 +97,19 @@ fi
 
 # Push to the main repo
 echo "📦 Pushing to the main repo..."
-PRE_PUSH=$(git rev-parse HEAD)
+PRE_PUSH=$(git rev-parse --verify --quiet '@{u}' 2>/dev/null || git rev-parse --verify --quiet HEAD~1 2>/dev/null || git rev-parse HEAD)
 git push "$@"
 
-# If there are changes in wiki/, deploy (diff ALL commits pushed, not just HEAD~1)
+# If there are changes in wiki/, deploy (diff ALL commits pushed against pre-push upstream)
 CHANGED=$(git diff --name-only "$PRE_PUSH" HEAD 2>/dev/null | grep "^wiki/" | head -1)
 if [ -n "$CHANGED" ]; then
-    echo "📋 Changes in wiki/ detected — deploying to GitLab Wiki..."
-    python3 "$SCRIPT_DIR/deploy-gitlab-wiki.py"
+    if [ "$WIKI_TARGET" = "gitlab" ]; then
+        DEPLOY="deploy-gitlab-wiki.py"
+    else
+        DEPLOY="deploy-wiki.py"
+    fi
+    echo "📋 Changes in wiki/ detected — deploying to $WIKI_TARGET wiki..."
+    python3 "$SCRIPT_DIR/$DEPLOY"
 else
     echo "ℹ No changes in wiki/ — skip deploy"
 fi

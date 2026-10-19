@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""convert-doc.py — Stage 1 of the doc→ingest pipeline (agentic-knowledge-management).
+"""convert-doc.py — Stage 1 of the doc→ingest pipeline.
 
 Deterministic RAW conversion of a source document to Markdown via `markit`,
 with format pre-handling for legacy/macro formats and an optional `pandoc`
@@ -9,7 +9,7 @@ This script does NO judgement work. It only produces bytes. All quality
 control, annotation, and approval happen in later stages (see SKILL.md).
 
 Usage:
-  "$CLAUDE_PLUGIN_ROOT/skills/doc-pipeline/convert-doc.py" <source-file> [--out-dir DIR] [--no-ref] [--keep-images]
+  .agents/skills/doc-pipeline/scripts/convert-doc.py <source-file> [--out-dir DIR] [--no-ref] [--keep-images]
 
 Output (relative to the current vault root):
   <out-dir>/<slug>.md             raw markdown (markit)
@@ -33,14 +33,44 @@ import sys
 import tempfile
 from pathlib import Path
 
-# ---- vault root via plugin-wide resolver (PR0): KM_VAULT_PATH env → cwd ----
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
-from vault_root import resolve_vault_root  # noqa: E402
+
+def find_vault_root() -> Path:
+    """Walk up for the vault root: wiki/ AND .git (a skills dir also has wiki/).
+
+    cwd first, then this script's own location: the same script copied into a
+    project's .agents/skills/ must resolve that project, and a script living in
+    a separate checkout must still work when run from the vault it acts on.
+    Counting .parent levels breaks in both cases; the marker walk does not.
+    """
+    env_root = os.environ.get("KM_VAULT_PATH", "").strip()
+    if env_root:
+        p = Path(env_root).expanduser().resolve()
+        if (p / "wiki").is_dir() and not (p / "wiki" / "SKILL.md").exists():
+            return p
+    for start in (Path.cwd().resolve(), Path(__file__).resolve()):
+        for parent in (start, *start.parents):
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
+                return parent
+    raise SystemExit(
+        "error: vault root not found — run inside a project with wiki/ and .git"
+    )
 
 
 def err(msg: str) -> None:
     print(msg, file=sys.stderr)
 
+
+def _markit_cmd() -> list[str] | None:
+    """Resolve markit: prefer a global `markit` binary, else `npx -y @shiftlabs/markit`."""
+    if shutil.which("markit") is not None:
+        return ["markit"]
+    if shutil.which("npx") is not None:
+        return ["npx", "-y", "@shiftlabs/markit"]
+    return None
 
 def derive_slug(stem: str) -> str:
     """Replicate the shell slug derivation:
@@ -55,12 +85,14 @@ def derive_slug(stem: str) -> str:
 
 
 def main(argv: list[str]) -> int:
-    root = resolve_vault_root()
-
-    # ---- args ----
+    if any(a in ("-h", "--help") for a in argv):
+        print((__doc__ or "").strip())
+        return 0
     if not argv:
         err("usage: convert-doc.py <source-file> [--out-dir DIR] [--no-ref] [--keep-images]")
         return 2
+
+    root = find_vault_root()
     src = argv[0]
     rest = argv[1:]
 
@@ -86,8 +118,12 @@ def main(argv: list[str]) -> int:
     if not Path(src).is_file():
         err(f"ERROR: source not found: {src}")
         return 1
-    if shutil.which("markit") is None:
-        err("ERROR: markit not installed (npm i -g markit-ai / brew install markit?)")
+    markit_cmd = _markit_cmd()
+    if markit_cmd is None:
+        err(
+            "ERROR: markit not installed and npx not found "
+            "(install Node.js for npx, or: npm i -g @shiftlabs/markit)"
+        )
         return 1
 
     # ---- derive a clean slug from the filename ----
@@ -111,14 +147,14 @@ def main(argv: list[str]) -> int:
     try:
         return _convert(
             src, base, stem, ext, slug, root, out, ref, work,
-            make_ref, keep_images,
+            make_ref, keep_images, markit_cmd,
         )
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
 def _convert(src, base, stem, ext, slug, root, out, ref, work,
-             make_ref, keep_images) -> int:
+             make_ref, keep_images, markit_cmd: list[str]) -> int:
     # ---- normalize source into a markit-friendly file ----
     markit_src = src
     pre = ""
@@ -159,7 +195,7 @@ def _convert(src, base, stem, ext, slug, root, out, ref, work,
     # The `convert` subcommand form silently ignores -o, so we use the default command.
     print(f"→ markit convert: {base}" + (f"  [{pre}]" if pre else ""))
     result = subprocess.run(
-        ["markit", "-q", "-i", str(work / "img"), "-o", str(out), markit_src]
+        [*markit_cmd, "-q", "-i", str(work / "img"), "-o", str(out), markit_src]
     )
     if result.returncode != 0:
         err(f"ERROR: markit failed on {base}")

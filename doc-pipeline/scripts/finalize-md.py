@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""finalize-md.py — Stage 4 of the doc→ingest pipeline (agentic-knowledge-management).
+"""finalize-md.py — Stage 4 of the doc→ingest pipeline.
 
 Takes an APPROVED staging file (raw MD + inline review annotations) and emits
 a clean, ingest-ready Markdown: the <!-- PIPELINE-REVIEW ... --> header and all
@@ -10,7 +10,7 @@ Guard: refuses to run unless the PIPELINE-REVIEW header says `status: approved`
 (override with --force). This is the approval gate.
 
 Usage:
-  "$CLAUDE_PLUGIN_ROOT/skills/doc-pipeline/finalize-md.py" <staging-file.md> [--out-dir DIR] [--force]
+  .agents/skills/doc-pipeline/scripts/finalize-md.py <staging-file.md> [--out-dir DIR] [--force]
 
 Default out-dir = <vault>/.raw  (ingest-ready; picked up by the wiki-ingest skill)
 """
@@ -20,9 +20,31 @@ import re
 import sys
 from pathlib import Path
 
-# vault root via plugin-wide resolver (PR0): KM_VAULT_PATH env → cwd
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "lib"))
-from vault_root import resolve_vault_root  # noqa: E402
+
+def find_vault_root() -> Path:
+    """Walk up for the vault root: wiki/ AND .git (a skills dir also has wiki/).
+
+    cwd first, then this script's own location: the same script copied into a
+    project's .agents/skills/ must resolve that project, and a script living in
+    a separate checkout must still work when run from the vault it acts on.
+    Counting .parent levels breaks in both cases; the marker walk does not.
+    """
+    env_root = os.environ.get("KM_VAULT_PATH", "").strip()
+    if env_root:
+        p = Path(env_root).expanduser().resolve()
+        if (p / "wiki").is_dir() and not (p / "wiki" / "SKILL.md").exists():
+            return p
+    for start in (Path.cwd().resolve(), Path(__file__).resolve()):
+        for parent in (start, *start.parents):
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
+                return parent
+    raise SystemExit(
+        "error: vault root not found — run inside a project with wiki/ and .git"
+    )
 
 
 def err(msg: str) -> None:
@@ -30,11 +52,14 @@ def err(msg: str) -> None:
 
 
 def main(argv: list[str]) -> int:
-    root = resolve_vault_root()
-
+    if any(a in ("-h", "--help") for a in argv):
+        print((__doc__ or "").strip())
+        return 0
     if not argv:
         err("usage: finalize-md.py <staging-file.md> [--out-dir DIR] [--force]")
         return 2
+
+    root = find_vault_root()
     src = argv[0]
     rest = argv[1:]
 

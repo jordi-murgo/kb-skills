@@ -1,6 +1,6 @@
 ---
 name: ego-browser-research
-description: "Research websites, social platforms, logged-in sources, or browser-rendered pages with Ego Browser. Use for source-backed internet research beyond static fetch/search."
+description: "Research websites, social platforms, logged-in sources, or browser-rendered pages with Ego Browser, returning bounded rendered text plus canonical URLs. Use for source-backed internet research beyond static fetch/search; use autoresearch to run a full filed research loop and vampirize to judge whether an external artifact is reusable. Triggers on: browse and extract, logged-in source, rendered page, read this social post, capture evidence from a site."
 allowed-tools: Bash Read
 ---
 

@@ -1,6 +1,19 @@
 # Wiki Modes
 
-Six modes cover the most common use cases. Pick the one that fits, or combine them.
+Six layout patterns cover the most common use cases. Pick the one that fits, or
+combine them.
+
+**Every mode shares one canonical state layer**, defined in
+[`project-state.md`](project-state.md) and enforced by `wiki-lint`:
+`wiki/index.md`, `wiki/log.md`, `wiki/hot.md`, `wiki/goals.md`,
+`wiki/dashboard.md`, plus the root `AGENTS.md`. A mode only adds *content*
+folders under `wiki/`; it never invents a second index, log or hot cache.
+
+The per-mode frontmatter below is a **content schema** for that mode's own pages
+(`url`, `path`, `owner`, `priority`, …). Universal fields (`type`, `title`,
+`created`, `updated`, `tags`, `status`) and the `status` enum come from
+the `wiki-markdown` skill (`references/frontmatter.md`); when a mode's `status` values differ, keep
+them as mode-specific extra fields rather than overloading `status`.
 
 ---
 
@@ -17,10 +30,7 @@ vault/
 │   ├── audits/        # content gaps, redirect needs, thin content flags
 │   ├── keywords/      # keyword clusters, target page assignments
 │   └── entities/      # brand, authors, topic hubs
-├── _meta/
-│   ├── index.md
-│   └── log.md
-└── CLAUDE.md
+└── AGENTS.md
 ```
 
 Frontmatter for `wiki/pages/` notes:
@@ -62,10 +72,7 @@ vault/
 │   ├── decisions/     # Architecture Decision Records (ADRs)
 │   ├── dependencies/  # external deps, versions, risk assessment
 │   └── flows/         # data flows, request paths, auth flows
-├── _meta/
-│   ├── index.md
-│   └── log.md
-└── CLAUDE.md
+└── AGENTS.md
 ```
 
 Frontmatter for `wiki/modules/` notes:
@@ -104,10 +111,7 @@ vault/
 │   ├── deliverables/  # milestones, outputs, status tracking
 │   ├── intel/         # competitor analysis, market research
 │   └── comms/         # synthesized meeting notes, key threads
-├── _meta/
-│   ├── index.md
-│   └── log.md
-└── CLAUDE.md
+└── AGENTS.md
 ```
 
 Frontmatter for `wiki/decisions/` notes:
@@ -143,11 +147,8 @@ vault/
 │   ├── people/        # relationships, shared context, follow-ups
 │   ├── areas/         # life areas: health, finances, career, creative
 │   └── resources/     # books, courses, tools worth referencing
-├── _meta/
-│   ├── index.md
-│   ├── log.md
-│   └── hot-cache.md   # ~500-word summary of most active context
-└── CLAUDE.md
+├── wiki/index.md  wiki/log.md  wiki/hot.md  wiki/goals.md  wiki/dashboard.md
+└── AGENTS.md
 ```
 
 Frontmatter for `wiki/goals/` notes:
@@ -165,7 +166,7 @@ updated: YYYY-MM-DD
 ---
 ```
 
-Hot cache note: `_meta/hot-cache.md` is a ~500-word file the AI agent updates at the end of each session. It captures current focus areas, recent wins, and open threads. This prevents the AI agent from having to crawl the whole wiki to answer "where were we?".
+Hot cache note: `wiki/hot.md` is a ~500-word file the AI agent updates at the end of each session. It captures current focus areas, recent wins, and open threads. This prevents the AI agent from having to crawl the whole wiki to answer "where were we?".
 
 Key wiki pages to create: `[[North Star]]`, `[[Weekly Review Template]]`, `[[Annual Goals]]`
 
@@ -184,10 +185,7 @@ vault/
 │   ├── entities/      # people, organizations, methods, datasets
 │   ├── thesis/        # evolving synthesis: the "state of the field" pages
 │   └── gaps/          # open questions, contradictions, research needed
-├── _meta/
-│   ├── index.md
-│   └── log.md
-└── CLAUDE.md
+└── AGENTS.md
 ```
 
 Frontmatter for `wiki/papers/` notes:
@@ -225,10 +223,7 @@ vault/
 │   ├── concepts/      # domain-specific terms and frameworks
 │   ├── timeline/      # plot structure, curriculum sequence, chapter map
 │   └── synthesis/     # your own takeaways, questions, applications
-├── _meta/
-│   ├── index.md
-│   └── log.md
-└── CLAUDE.md
+└── AGENTS.md
 ```
 
 Frontmatter for `wiki/concepts/` notes:

@@ -1,43 +1,99 @@
 #!/usr/bin/env python3
 """Import Jira issues to the vault's raw source directory via REST API v3.
 
-Reads the `jira` section of kb-config.json at the vault root: base_url,
-project_key and output_dir. Nothing project-specific is hardcoded here.
+Reads the `jira` section of kb-config at the vault root (kb-config.yaml, .yml,
+or legacy .json): base_url, project_key and output_dir. Nothing project-specific
+is hardcoded here.
 
 Usage:
-    set -a && . ./.env.local && set +a && \
-        python3 .agents/skills/kb-jira-sync/scripts/import-jira.py
+    python3 .agents/skills/kb-jira-sync/scripts/import-jira.py
 
-Requires ATLASIAN_EMAIL and ATLASIAN_API_KEY in environment (never in the
-config file). Writes <output_dir>/<KEY>-N.md in deterministic Markdown format.
-Only overwrites files when content changed (git-friendly).
+Run it from the vault root (or anywhere inside it): the script resolves the
+vault by walking up for wiki/ + .git, then loads .env and .env.local itself.
+
+Requires ATLASSIAN_EMAIL and ATLASSIAN_API_KEY in the environment or the vault
+root .env/.env.local (never in the config file). The historical misspelling
+ATLASIAN_* (one S) is still accepted with a warning. Writes <output_dir>/<KEY>-N.md
+in deterministic Markdown format. Only overwrites files when content changed
+(git-friendly).
 """
+import base64
 import json
 import os
+import re
 import sys
-import urllib.request
 import urllib.parse
-import base64
+import urllib.request
 from pathlib import Path
 
-def find_repo_root() -> Path:
-    """Walk up from this file to the vault root (the directory holding wiki/).
 
-    This script lives inside a skill, so its depth below the repo root depends on
-    where the skill is installed. Counting .parent levels breaks the moment it
-    moves; looking for the marker does not.
+def find_repo_root() -> Path:
+    """Walk up for the vault root: wiki/ AND .git.
+
+    cwd first, then this script's own location: the same script copied into a
+    project's .agents/skills/ must resolve that project. Counting .parent levels
+    breaks the moment the skill moves; the marker walk does not. Both markers
+    are required — there is a skill directory named "wiki" under
+    .agents/skills/, so wiki/ alone resolves to the skills directory instead of
+    the vault root.
     """
-    for parent in Path(__file__).resolve().parents:
-        # Both markers, not just wiki/: there is a skill directory named "wiki"
-        # under .agents/skills/, so the wiki/ marker alone resolves to the skills
-        # directory instead of the repo root.
-        if (parent / "wiki").is_dir() and (parent / ".git").exists():
-            return parent
+    for start in (Path.cwd().resolve(), Path(__file__).resolve()):
+        for parent in (start, *start.parents):
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
+                return parent
     raise SystemExit("repo root not found: no ancestor has both wiki/ and .git")
 
 
+REPO_ROOT = find_repo_root()
+
+
+def load_env() -> None:
+    """Fill os.environ from <root>/.env then <root>/.env.local.
+
+    Later file wins; keys already present in the process environment always win
+    over both. Plain KEY=VALUE lines, optional leading 'export '.
+    """
+    process_keys = set(os.environ)
+    for name in (".env", ".env.local"):
+        env_file = REPO_ROOT / name
+        if not env_file.is_file():
+            continue
+        for raw in env_file.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k = k.strip()
+            if k and k not in process_keys:
+                os.environ[k] = v.strip().strip("'\"")
+
+
+load_env()
+
+MACRO_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def expand_macros(value):
+    """Expand ${VAR} / ${VAR:-default} recursively in config values."""
+    if isinstance(value, str):
+        return MACRO_RE.sub(
+            lambda m: os.environ.get(m.group(1)) or (m.group(2) or ""), value
+        )
+    if isinstance(value, list):
+        return [expand_macros(item) for item in value]
+    if isinstance(value, dict):
+        return {key: expand_macros(item) for key, item in value.items()}
+    return value
+
+
 def load_config(root: Path, section: str) -> dict:
-    """Read one section of the vault's kb-config file.
+    """Read one section of the vault's kb-config file, macros expanded.
 
     YAML is preferred; JSON is still accepted so consumer projects migrate at
     their own pace. Kept inline rather than in a shared module: a skill copied on
@@ -76,21 +132,24 @@ def load_config(root: Path, section: str) -> dict:
         raise SystemExit(f"{path} must contain a mapping at the top level")
     if section not in cfg:
         raise SystemExit(f"{path} has no '{section}' section")
-    return cfg[section]
+    sec = cfg[section]
+    if not isinstance(sec, dict):
+        raise SystemExit(f"{path}: '{section}' must be a mapping")
+    return {k: expand_macros(v) for k, v in sec.items()}
 
 
-REPO_ROOT = find_repo_root()
 _JIRA = load_config(REPO_ROOT, "jira")
 
 if not _JIRA.get("enabled", False):
     raise SystemExit(
-        "jira.enabled is false in kb-config.json — nothing to import.\n"
+        "jira.enabled is false in kb-config.yaml — nothing to import.\n"
         "Set it to true once base_url and project_key are configured."
     )
 
 _missing = [k for k in ("base_url", "project_key") if not _JIRA.get(k)]
 if _missing:
-    raise SystemExit(f"kb-config.json jira section is missing: {', '.join(_missing)}")
+    raise SystemExit(f"kb-config.yaml jira section is missing: {', '.join(_missing)}")
+
 
 def vault_path(root: Path, value: str, key: str) -> Path:
     """Resolve a config path value against the vault root, refusing to escape it.
@@ -104,12 +163,12 @@ def vault_path(root: Path, value: str, key: str) -> Path:
     """
     if os.path.isabs(value) or value.startswith("~"):
         raise SystemExit(
-            f"kb-config.json {key} must be relative to the vault root, got: {value}"
+            f"kb-config.yaml {key} must be relative to the vault root, got: {value}"
         )
     resolved = (root / value).resolve()
     if resolved != root.resolve() and root.resolve() not in resolved.parents:
         raise SystemExit(
-            f"kb-config.json {key} escapes the vault root, got: {value}"
+            f"kb-config.yaml {key} escapes the vault root, got: {value}"
         )
     return resolved
 
@@ -117,19 +176,25 @@ def vault_path(root: Path, value: str, key: str) -> Path:
 JIRA_BASE = _JIRA["base_url"].rstrip("/")
 PROJECT_KEY = _JIRA["project_key"]
 RAW_JIRA_DIR = vault_path(REPO_ROOT, _JIRA.get("output_dir", ".raw/jira"), "jira.output_dir")
+CACHE_JIRA_DIR = vault_path(REPO_ROOT, _JIRA.get("cache_dir", ".cache/jira"), "jira.cache_dir")
 
 
-def load_env():
-    """Load .env.local if present."""
-    env_file = REPO_ROOT / ".env.local"
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" in line:
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
+def credential(name: str) -> str:
+    """Read a credential, preferring the correct spelling.
+
+    ATLASSIAN_* is canonical. ATLASIAN_* (one S) is the historical misspelling
+    this script shipped with; it keeps working for existing vaults but warns.
+    """
+    value = os.environ.get(f"ATLASSIAN_{name}", "")
+    if value:
+        return value
+    legacy = os.environ.get(f"ATLASIAN_{name}", "")
+    if legacy:
+        print(
+            f"WARN: ATLASIAN_{name} is a misspelling — rename it to ATLASSIAN_{name}",
+            file=sys.stderr,
+        )
+    return legacy
 
 
 def api_get(path: str, auth_header: str) -> dict:
@@ -174,6 +239,9 @@ def adf_to_markdown(node) -> str:
             parts.append(adf_block_to_markdown(block))
         return "\n\n".join(p for p in parts if p)
     return adf_block_to_markdown(node)
+
+
+UNHANDLED_ADF_TYPES: set[str] = set()
 
 
 def adf_block_to_markdown(block: dict) -> str:
@@ -233,6 +301,8 @@ def adf_block_to_markdown(block: dict) -> str:
     if btype == "text":
         return block.get("text", "")
 
+    if btype and btype not in ("doc", "listItem"):
+        UNHANDLED_ADF_TYPES.add(btype)
     # Fallback: try to extract text from content
     if content:
         texts = []
@@ -266,14 +336,15 @@ def fetch_all_issues(auth_header: str) -> list:
     return all_issues
 
 
-def fetch_comments(issue_key: str, auth_header: str) -> list:
-    """Fetch comments for a single issue."""
+def fetch_comments(issue_key: str, auth_header: str) -> list | None:
+    """Fetch comments for a single issue. Returns None on error so the caller skips writing."""
     path = f"/rest/api/3/issue/{issue_key}/comment?maxResults=100"
     try:
         data = api_get(path, auth_header)
         return data.get("comments", [])
-    except Exception:
-        return []
+    except Exception as exc:
+        print(f"ERROR fetching comments for {issue_key}: {exc}", file=sys.stderr)
+        return None
 
 
 def format_issue_markdown(issue: dict, comments: list) -> str:
@@ -377,39 +448,94 @@ def format_issue_markdown(issue: dict, comments: list) -> str:
     return "\n".join(lines)
 
 
-def main():
-    load_env()
+def write_cache(key: str, issue: dict, comments: list) -> None:
+    """Persist the API payload verbatim so the renderer can be re-run offline."""
+    CACHE_JIRA_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {"issue": issue, "comments": comments}
+    (CACHE_JIRA_DIR / f"{key}.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
-    email = os.environ.get("ATLASIAN_EMAIL", "")
-    token = os.environ.get("ATLASIAN_API_KEY", "")
-    if not email or not token:
-        print("ERROR: ATLASIAN_EMAIL and ATLASIAN_API_KEY required in .env.local", file=sys.stderr)
-        sys.exit(1)
 
-    auth = base64.b64encode(f"{email}:{token}".encode()).decode()
-    auth_header = f"Basic {auth}"
+def read_cache() -> list[tuple[dict, list]]:
+    """Load every cached payload; refuses when the cache is empty."""
+    if not CACHE_JIRA_DIR.is_dir():
+        raise SystemExit(
+            f"--render-only: no cache at {CACHE_JIRA_DIR}.\n"
+            "Run a full import first; it stores the API payloads verbatim."
+        )
+    payloads = []
+    for path in sorted(CACHE_JIRA_DIR.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            raise SystemExit(f"--render-only: {path} is not valid JSON: {e}")
+        if not isinstance(data, dict) or "issue" not in data:
+            raise SystemExit(f"--render-only: {path} is not an import-jira cache file")
+        payloads.append((data["issue"], data.get("comments") or []))
+    if not payloads:
+        raise SystemExit(f"--render-only: no cached issues in {CACHE_JIRA_DIR}")
+    return payloads
 
-    print(f"Fetching issues from {PROJECT_KEY}...")
-    issues = fetch_all_issues(auth_header)
-    print(f"  Found {len(issues)} issues")
 
+def main(argv: list[str]) -> None:
+    allowed = {"--render-only", "--full", "--debug"}
+    render_only = "--render-only" in argv
+    debug = "--debug" in argv
+    unknown = [a for a in argv if a not in allowed]
+    if unknown:
+        raise SystemExit(
+            f"usage: import-jira.py [--render-only] [--full] [--debug]  (unknown arg: {unknown[0]})"
+        )
+
+    failed_keys: list[str] = []
+    if render_only:
+        payloads = read_cache()
+        print(f"Rendering {len(payloads)} cached issue(s) from {CACHE_JIRA_DIR}...")
+    else:
+        load_env()
+
+        email = credential("EMAIL")
+        token = credential("API_KEY")
+        if not email or not token:
+            print(
+                "ERROR: ATLASSIAN_EMAIL and ATLASSIAN_API_KEY required "
+                "(.env, .env.local, or the process environment)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        auth = base64.b64encode(f"{email}:{token}".encode()).decode()
+        auth_header = f"Basic {auth}"
+
+        print(f"Fetching issues from {PROJECT_KEY}...")
+        issues = fetch_all_issues(auth_header)
+        print(f"  Found {len(issues)} issues")
+
+        payloads = []
+        for issue in issues:
+            key = issue["key"]
+            print(f"  Fetching comments for {key}...", end=" ")
+            comments = fetch_comments(key, auth_header)
+            if comments is None:
+                print("FAILED (skipped)")
+                failed_keys.append(key)
+                continue
+            print(f"{len(comments)} comments")
+            write_cache(key, issue, comments)
+            payloads.append((issue, comments))
     RAW_JIRA_DIR.mkdir(parents=True, exist_ok=True)
 
     new_count = 0
     modified_count = 0
     unchanged_count = 0
 
-    for issue in issues:
+    for issue, comments in payloads:
         key = issue["key"]
-        filename = f"{key}.md"
-        filepath = RAW_JIRA_DIR / filename
+        filepath = RAW_JIRA_DIR / f"{key}.md"
 
-        print(f"  Fetching comments for {key}...", end=" ")
-        comments = fetch_comments(key, auth_header)
-        print(f"{len(comments)} comments")
-
-        content = format_issue_markdown(issue, comments)
-        content += "\n"  # trailing newline
+        content = format_issue_markdown(issue, comments) + "\n"
 
         if filepath.exists():
             existing = filepath.read_text(encoding="utf-8")
@@ -424,12 +550,25 @@ def main():
 
     print()
     print(f"=== Import summary ===")
-    print(f"  Total issues: {len(issues)}")
+    print(f"  Total issues: {len(payloads)}")
     print(f"  New files:    {new_count}")
     print(f"  Modified:     {modified_count}")
     print(f"  Unchanged:    {unchanged_count}")
     print(f"  Output dir:   {RAW_JIRA_DIR}")
-
+    if not render_only:
+        print(f"  Cache dir:    {CACHE_JIRA_DIR}")
+    if debug:
+        if UNHANDLED_ADF_TYPES:
+            print(f"  Unhandled ADF node types: {', '.join(sorted(UNHANDLED_ADF_TYPES))}")
+        else:
+            print("  Unhandled ADF node types: none")
+    if failed_keys:
+        print(
+            f"ERROR: skipped {len(failed_keys)} issue(s) due to comment fetch errors: "
+            + ", ".join(failed_keys),
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

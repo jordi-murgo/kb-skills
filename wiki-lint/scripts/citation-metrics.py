@@ -42,11 +42,20 @@ META_BASENAMES = {"index.md", "log.md", "hot.md", "_index.md"}
 
 
 def find_vault_root() -> Path:
-    """Walk up for the vault root: wiki/ AND .git (a skills dir also has wiki/)."""
+    """Walk up for the vault root: wiki/ AND .git, and wiki/ is not a skill.
+
+    A skill directory named "wiki" lives under .agents/skills/ and this
+    repository itself contains wiki/SKILL.md; either would otherwise satisfy
+    the wiki/ + .git test and silently resolve to the wrong tree.
+    """
     cwd = Path(os.getcwd()).resolve()
     for start in (cwd, Path(__file__).resolve()):
         for parent in [start] + list(start.parents):
-            if (parent / "wiki").is_dir() and (parent / ".git").exists():
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
                 return parent
     raise SystemExit("error: vault root not found — run inside a project with wiki/")
 
