@@ -230,8 +230,8 @@ def is_excluded_wiki_page(relpath: Path) -> bool:
     return False
 
 
-def source_files() -> dict[str, Path]:
-    """Collect configured Markdown files, excluding Git metadata and ignored paths."""
+def candidate_files() -> dict[str, Path]:
+    """Every configured Markdown file, before quarantine filtering."""
     candidates = {}
     for directory in SOURCE_DIRS:
         if not directory.is_dir():
@@ -251,6 +251,71 @@ def source_files() -> dict[str, Path]:
     }
 
 
+def frontmatter_scalar(text: str, field: str) -> str | None:
+    """Return one scalar frontmatter field, ignoring nested list items.
+
+    Only column-0 `key: value` lines count, so `tags:` / `sources:` lists and
+    their `- item` lines cannot shadow a real field.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if line[:1] in (" ", "\t", "-"):
+            continue
+        key, _, value = line.partition(":")
+        if key.strip() == field:
+            return value.strip().strip("'\"") or None
+    return None
+
+
+def quarantine_reason(text: str) -> str | None:
+    """Why this page must stay out of the index, or None to index it.
+
+    Only configured output types are gated: a page an agent filed back into the
+    wiki (an answer, a summary) is a claim, not knowledge, until its status says
+    it was checked. Pages of any other type are never affected, whatever their
+    status. With no `trust.output_types` configured this is always None, which
+    is the pre-trust behavior.
+    """
+    if not OUTPUT_TYPES:
+        return None
+    page_type = (frontmatter_scalar(text, "type") or "").lower()
+    if page_type not in OUTPUT_TYPES:
+        return None
+    status = (frontmatter_scalar(text, "status") or "").lower()
+    if status in INDEXED_STATUSES:
+        return None
+    return status or "(no status)"
+
+
+def collect_sources() -> tuple[dict[str, Path], list[dict]]:
+    """Return (indexed files, quarantined pages) from one scan.
+
+    One rglob and one `git check-ignore` call serve both lists, so `build` and
+    `status` can report quarantine without paying for the walk twice.
+    """
+    indexed: dict[str, Path] = {}
+    quarantined: list[dict] = []
+    for relpath, path in candidate_files().items():
+        if OUTPUT_TYPES:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            reason = quarantine_reason(text)
+            if reason is not None:
+                quarantined.append({"page": relpath, "status": reason})
+                continue
+        indexed[relpath] = path
+    return indexed, quarantined
+
+
+def source_files() -> dict[str, Path]:
+    """Collect indexed Markdown files, excluding Git metadata, ignored paths
+    and quarantined output pages."""
+    return collect_sources()[0]
+
+
 VAULT_ROOT = find_vault_root()
 load_env_files(VAULT_ROOT)
 _CFG = load_config_section(VAULT_ROOT, "embeddings")
@@ -260,6 +325,20 @@ DEFAULT_DB = vault_path(VAULT_ROOT, _db, "embeddings.db") if _db else VAULT_ROOT
 DEFAULT_MODEL = _CFG.get("model") or "bge-m3"
 OLLAMA_URL = _CFG.get("endpoint") or "http://127.0.0.1:11434"
 DB_PATH = DEFAULT_DB
+
+# Output trust: an answer or summary an agent files back into the wiki is a
+# claim, not knowledge, until its status says it was checked. Without config
+# nothing is gated; with `trust.output_types` set, pages of those types are
+# indexed only when their status is in `trust.indexed_status`.
+_TRUST = load_config_section(VAULT_ROOT, "trust")
+_raw_types = _TRUST.get("output_types") or []
+if not isinstance(_raw_types, list) or not all(isinstance(t, str) and t.strip() for t in _raw_types):
+    raise SystemExit("kb-config trust.output_types must be a list of page types")
+OUTPUT_TYPES = {t.strip().lower() for t in _raw_types}
+_raw_statuses = _TRUST.get("indexed_status") or ["verified"]
+if not isinstance(_raw_statuses, list) or not all(isinstance(s, str) and s.strip() for s in _raw_statuses):
+    raise SystemExit("kb-config trust.indexed_status must be a list of statuses")
+INDEXED_STATUSES = {s.strip().lower() for s in _raw_statuses}
 
 EMBED_BATCH = 32
 EMBED_TIMEOUT = 180
@@ -612,7 +691,7 @@ def cmd_build(args):
         )
         print(f"error: configured source directory not found: {missing}", file=sys.stderr)
         return 1
-    current = source_files()
+    current, quarantined = collect_sources()
     conn = connect_writable()
     t0 = time.perf_counter()
     ensure_schema(conn)
@@ -720,6 +799,8 @@ def cmd_build(args):
         "embedded": embedded,
         "embed_failures": embed_failures,
         "source_dirs": configured_source_dirs(),
+        "quarantined": quarantined,
+        "quarantined_count": len(quarantined),
         "model": args.model,
         "bm25_backend": backend,
         "build_seconds": round(elapsed, 2),
@@ -738,6 +819,11 @@ def cmd_build(args):
         )
         print(f"db: {DB_PATH} ({db_mb:.2f} MB)")
         print(f"sources: {', '.join(configured_source_dirs())}")
+        if quarantined:
+            print(f"quarantined: {len(quarantined)} output page(s) not indexed"
+                  f" (status not in {sorted(INDEXED_STATUSES)})")
+            for item in quarantined:
+                print(f"  held: {item['page']} (status: {item['status']})")
     return 0
 
 
@@ -1121,11 +1207,16 @@ def cmd_status(args):
         path: (mtime, sha)
         for path, mtime, sha in conn.execute("SELECT path, mtime, sha256 FROM pages")
     }
-    current = source_files()
+    current, quarantined = collect_sources()
+    held = {item["page"]: item["status"] for item in quarantined}
     for relpath, (mtime, sha) in sorted(known.items()):
         f = current.get(relpath)
         if f is None:
-            stale.append({"page": relpath, "reason": "deleted"})
+            if relpath in held:
+                stale.append({"page": relpath, "reason": "quarantined",
+                              "status": held[relpath]})
+            else:
+                stale.append({"page": relpath, "reason": "deleted"})
             continue
         if f.stat().st_mtime != mtime:
             if hashlib.sha256(f.read_bytes()).hexdigest() != sha:
@@ -1146,6 +1237,8 @@ def cmd_status(args):
         "stale_count": len(stale),
         "new_pages": new_pages,
         "new_count": len(new_pages),
+        "quarantined": quarantined,
+        "quarantined_count": len(quarantined),
         "db_bytes": DB_PATH.stat().st_size,
         "db_path": str(DB_PATH),
     }
@@ -1158,9 +1251,15 @@ def cmd_status(args):
         print(f"stale: {len(stale)}  new: {len(new_pages)}")
         print(f"sources: {', '.join(configured_source_dirs())}")
         for s in stale:
-            print(f"  stale: {s['page']} ({s['reason']})")
+            detail = f" ({s['reason']}"
+            detail += f", status: {s['status']})" if s.get("status") else ")"
+            print(f"  stale: {s['page']}{detail}")
         for p in new_pages:
             print(f"  new: {p}")
+        if quarantined:
+            print(f"quarantined: {len(quarantined)} output page(s) excluded from the index")
+            for item in quarantined:
+                print(f"  held: {item['page']} (status: {item['status']})")
     return 0
 
 

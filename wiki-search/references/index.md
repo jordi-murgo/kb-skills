@@ -27,6 +27,20 @@ Changing the configured `db` path requires an explicit edit to kb-config.yaml; t
 
 Without config: `bge-m3` at `http://127.0.0.1:11434`, index at `.cache/wiki-search/index.db` — disposable derived cache, delete and rebuild anytime (~6 s for a 35-page vault; a full rebuild also happens automatically when the model changes). `WIKI_SEM_NO_FTS5=1` forces the fallback inverted index. `vector` mode needs the embedding endpoint up; `bm25` works offline.
 
+## Output trust
+
+An answer or summary an agent files back into the wiki is a claim, not knowledge. With a `trust` section in kb-config.yaml, pages of the listed types stay out of the index until their `status:` says they were checked:
+
+```yaml
+trust:
+  output_types: [question, summary]   # types whose pages are gated
+  indexed_status: [verified]          # statuses that earn indexing (default)
+```
+
+Only the listed types are gated — a `concept` in `draft` is still indexed, because the gate is about self-authored output re-entering the retrieval corpus, not about every page's maturity. Matching is case-insensitive; a page with no `status:` is quarantined and reported as `(no status)`. Without the section nothing is gated, which is the pre-trust behavior every existing vault depends on.
+
+`build` and `status` both report quarantine (`quarantined_count` plus one `{page, status}` per held page). In `status`, a page that left the index because of quarantine is reported as `reason: quarantined`, not `deleted` — the distinction matters: one is a promotion away from returning, the other needs re-ingesting.
+
 ## Query semantics
 
 Default mode `hybrid` fuses the complete BM25 and vector lists with RRF (no top-L cutoff: truncated fusion is a different ranking, not a cheaper one — see arXiv:2608.07152) and falls back to whichever list is non-empty. The FTS5 backend matches all query terms (AND), so natural-language questions often have no BM25 hits and `hybrid` then ranks by vector alone — measured on vulcano-kb in 5 of 7 smoke queries. `query --json` reports `bm25_rank`/`vector_rank` per hit, and `eval` counts these fallbacks. A query `--model` override differing from the index model warns that cosine scores may be meaningless; a model change forces full re-embedding on the next build. Empty query text and `--top < 1` are rejected.

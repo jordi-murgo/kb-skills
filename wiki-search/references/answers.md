@@ -25,6 +25,8 @@ status: developing
 
 Then write the answer as the page body. Include citations and link every mentioned concept or entity. Replace the example links with existing wiki file stems or wiki-relative paths, not frontmatter titles or `.md` extensions. Use unaliased links inside Markdown tables so `|` does not split cells.
 
+**A filed answer is not yet knowledge.** `status: developing` keeps the page out of the search index when the vault configures `trust.output_types` to include `question` (see [Index commands and configuration](index.md) § Output trust). That is deliberate: an unverified answer that becomes searchable can be cited by the next answer. Promote it to `status: verified` only when you have re-read it against its cited pages, then rebuild the index. A vault without a `trust` section indexes every answer immediately, so set one before filing answers that will be cited later.
+
 ## Post-filing navigation maintenance
 
 1. Add an entry to `wiki/index.md` under Questions and the relevant domain `_index.md`.

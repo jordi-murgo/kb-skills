@@ -100,6 +100,22 @@ embeddings:
   source_dirs:
     - wiki
 
+# --- output trust (wiki-search) ---
+# An answer or summary an agent files back into the wiki is a CLAIM, not
+# knowledge, until its status says it was checked. Without this section every
+# page is indexed, which is the pre-trust behavior. With `output_types` set,
+# pages of those types are indexed only when their `status:` appears in
+# `indexed_status` (default: [verified]); everything else stays out of the
+# index and is reported as quarantined by `build` and `status`.
+#
+# Only the listed types are gated. A concept in `draft` is still indexed: the
+# gate is about self-authored output re-entering the retrieval corpus, not
+# about every page's maturity.
+#
+#trust:
+#  output_types: [question, summary]
+#  indexed_status: [verified]
+
 code_search:
   # Índice de código independiente, almacenado en .cache/code-search/.
   # Hereda embeddings.model/endpoint; source_dirs NO se hereda de embeddings.

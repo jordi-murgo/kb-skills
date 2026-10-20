@@ -41,3 +41,7 @@ Each axis has its own threshold because they differ in cost: `sensitive` rejects
 ## Lifecycle audit
 
 Reports content pages missing `status`, the dispute queue (`status: disputed` or `> [!contradiction]` callouts with file:line), and `status: verified` pages missing `evidence`. Run after batch ingests; fix the top of the list with real statuses, not bulk-stamping.
+
+## Answer filing is a separate gate
+
+This skill guards the *inbound* path: a source becomes claims, claims become pages. It does not guard an answer an agent files back into the wiki, which never passed through claim extraction. That path is gated at retrieval time instead: configure `trust.output_types` in kb-config.yaml and `wiki-search` keeps pages of those types out of the index until `status:` says they were checked (see `wiki-search/references/index.md` § Output trust). Use this skill's lifecycle audit to see which filed pages still lack evidence; use the trust gate to keep them out of search until they have it.
