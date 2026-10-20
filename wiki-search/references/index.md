@@ -35,9 +35,12 @@ An answer or summary an agent files back into the wiki is a claim, not knowledge
 trust:
   output_types: [question, summary]   # types whose pages are gated
   indexed_status: [verified]          # statuses that earn indexing (default)
+  require_evidence: false             # `verified` also needs `evidence:` (default false)
 ```
 
 Only the listed types are gated — a `concept` in `draft` is still indexed, because the gate is about self-authored output re-entering the retrieval corpus, not about every page's maturity. Matching is case-insensitive; a page with no `status:` is quarantined and reported as `(no status)`. Without the section nothing is gated, which is the pre-trust behavior every existing vault depends on.
+
+With `require_evidence: true`, a page whose status is in `indexed_status` but has no `evidence:` is held and reported as `verified without evidence`. Both frontmatter shapes count — a scalar and a populated list — while a bare `evidence:` with nothing under it does not. Turn it on only after the vault adopted the field: `wiki-vetting`'s lifecycle audit reports `verified` pages missing evidence, so run that first.
 
 `build` and `status` both report quarantine (`quarantined_count` plus one `{page, status}` per held page). In `status`, a page that left the index because of quarantine is reported as `reason: quarantined`, not `deleted` — the distinction matters: one is a promotion away from returning, the other needs re-ingesting.
 

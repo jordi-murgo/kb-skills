@@ -271,6 +271,45 @@ def frontmatter_scalar(text: str, field: str) -> str | None:
     return None
 
 
+def frontmatter_field_present(text: str, field: str) -> bool:
+    """True when a frontmatter field exists and carries content.
+
+    Frontmatter fields come in two shapes, both seen in real vaults:
+
+        evidence: "single value"
+
+        evidence:
+          - "first"
+          - "second"
+
+    A bare `evidence:` with no value and no list items is not evidence, so the
+    field's presence alone proves nothing — the shape has to be checked.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return False
+    in_field = False
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if not in_field:
+            key, _, value = line.partition(":")
+            if key.strip() != field:
+                continue
+            if value.strip().strip("'\""):
+                return True
+            in_field = True
+            continue
+        # Inside the field: list items count; another top-level key ends it.
+        if line.startswith((" ", "\t")):
+            if line.strip().startswith("-") and line.strip()[1:].strip().strip("'\""):
+                return True
+            continue
+        if line.strip():
+            in_field = False
+    return False
+
+
 def quarantine_reason(text: str) -> str | None:
     """Why this page must stay out of the index, or None to index it.
 
@@ -286,9 +325,14 @@ def quarantine_reason(text: str) -> str | None:
     if page_type not in OUTPUT_TYPES:
         return None
     status = (frontmatter_scalar(text, "status") or "").lower()
-    if status in INDEXED_STATUSES:
-        return None
-    return status or "(no status)"
+    if status not in INDEXED_STATUSES:
+        return status or "(no status)"
+    if REQUIRE_EVIDENCE and not frontmatter_field_present(text, "evidence"):
+        # `verified` is a promise that someone checked it. Without a pointer to
+        # what they checked against, the promise is unverifiable, and the page
+        # would be cited by the next answer exactly like a sourced one.
+        return f"{status} without evidence"
+    return None
 
 
 def collect_sources() -> tuple[dict[str, Path], list[dict]]:
@@ -339,6 +383,12 @@ _raw_statuses = _TRUST.get("indexed_status") or ["verified"]
 if not isinstance(_raw_statuses, list) or not all(isinstance(s, str) and s.strip() for s in _raw_statuses):
     raise SystemExit("kb-config trust.indexed_status must be a list of statuses")
 INDEXED_STATUSES = {s.strip().lower() for s in _raw_statuses}
+_raw_require_evidence = _TRUST.get("require_evidence", False)
+if not isinstance(_raw_require_evidence, bool):
+    raise SystemExit("kb-config trust.require_evidence must be true or false")
+# `verified` without `evidence:` is a promise nobody can check. Off by default
+# so a vault that has not adopted the field keeps indexing as before.
+REQUIRE_EVIDENCE = _raw_require_evidence
 
 EMBED_BATCH = 32
 EMBED_TIMEOUT = 180

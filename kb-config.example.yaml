@@ -112,9 +112,15 @@ embeddings:
 # gate is about self-authored output re-entering the retrieval corpus, not
 # about every page's maturity.
 #
+# `require_evidence: true` additionally withholds a page whose status already
+# qualifies but has no `evidence:` (scalar or list) — a `verified` page nobody
+# can check against anything. Off by default; run wiki-vetting's lifecycle
+# audit first to see how many pages would be affected.
+#
 #trust:
 #  output_types: [question, summary]
 #  indexed_status: [verified]
+#  require_evidence: false
 
 code_search:
   # Índice de código independiente, almacenado en .cache/code-search/.

@@ -84,6 +84,8 @@ class TrustCase(unittest.TestCase):
             lines.append("  indexed_status:")
             for value in self.trust_config["indexed_status"]:
                 lines.append(f"    - {value}")
+        if "require_evidence" in self.trust_config:
+            lines.append(f"  require_evidence: {str(self.trust_config['require_evidence']).lower()}")
         lines.append("embeddings:")
         lines.append("  model: test")
         return "\n".join(lines) + "\n"
@@ -91,12 +93,13 @@ class TrustCase(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.root, ignore_errors=True)
 
-    def write_answer(self, name: str, status: str, page_type: str = "question"):
+    def write_answer(self, name: str, status: str, page_type: str = "question",
+                     evidence: str | None = None):
         path = self.root / "wiki" / "questions" / f"{name}.md"
-        path.write_text(
-            ANSWER.format(status=status, page_type=page_type, filler=FILLER),
-            encoding="utf-8",
-        )
+        body = ANSWER.format(status=status, page_type=page_type, filler=FILLER)
+        if evidence is not None:
+            body = body.replace("tags: [question]\n", f"tags: [question]\n{evidence}\n", 1)
+        path.write_text(body, encoding="utf-8")
         return path.relative_to(self.root).as_posix()
 
     def write_concept(self, name: str, status: str = "confirmed"):
@@ -238,6 +241,46 @@ class QuarantinedPageIsNotSearchableTest(TrustCase):
         pages = {hit["page"] for hit in payload["results"]}
         self.assertTrue(pages, "the concept should still be searchable")
         self.assertNotIn("wiki/questions/draft-answer.md", pages)
+
+
+class EvidenceTest(TrustCase):
+    """`verified` is a promise; without a pointer to what was checked it is empty."""
+
+    trust_config = {"output_types": ["question"], "require_evidence": True}
+
+    def test_verified_without_evidence_is_held(self):
+        answer = self.write_answer("no-evidence", "verified")
+        _, report = self.build()
+        self.assertNotIn(answer, self.indexed_paths())
+        self.assertEqual(report["quarantined"][0]["status"], "verified without evidence")
+
+    def test_verified_with_scalar_evidence_is_indexed(self):
+        answer = self.write_answer(
+            "scalar", "verified", evidence='evidence: "https://example.test/commit/abc"'
+        )
+        self.build()
+        self.assertIn(answer, self.indexed_paths())
+
+    def test_verified_with_list_evidence_is_indexed(self):
+        answer = self.write_answer(
+            "listed", "verified",
+            evidence='evidence:\n  - "https://example.test/commit/one"\n'
+                     '  - "https://example.test/commit/two"',
+        )
+        self.build()
+        self.assertIn(answer, self.indexed_paths())
+
+    def test_empty_evidence_list_is_not_evidence(self):
+        answer = self.write_answer("empty-list", "verified", evidence="evidence:")
+        _, report = self.build()
+        self.assertNotIn(answer, self.indexed_paths())
+        self.assertEqual(report["quarantined"][0]["status"], "verified without evidence")
+
+    def test_requirement_is_off_by_default(self):
+        self.search.REQUIRE_EVIDENCE = False
+        answer = self.write_answer("no-evidence", "verified")
+        self.build()
+        self.assertIn(answer, self.indexed_paths())
 
 
 class StatusCommandTest(TrustCase):
