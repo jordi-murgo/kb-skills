@@ -384,6 +384,15 @@ _db = _merged("db")
 DEFAULT_DB = vault_path(VAULT_ROOT, _db, "embeddings.db") if _db else VAULT_ROOT / ".cache" / "wiki-search" / "index.db"
 DEFAULT_MODEL = _merged("model") or "bge-m3"
 OLLAMA_URL = _merged("endpoint") or "http://127.0.0.1:11434"
+# Instruction-aware models (qwen3-embedding, e5-instruct) expect the task
+# instruction on the QUERY only; documents are embedded unchanged. Without it
+# they do not fail — they silently score worse than the model they replaced
+# (code corpus: MRR 0.478 without, 0.771 with). Off by default because a model
+# that ignores the prefix is unaffected by an empty string.
+_raw_prefix = _merged("query_prefix", "")
+if not isinstance(_raw_prefix, str):
+    raise SystemExit("kb-config wiki_search.query_prefix must be a string")
+QUERY_PREFIX = _raw_prefix
 DB_PATH = DEFAULT_DB
 
 # Output trust: an answer or summary an agent files back into the wiki is a
@@ -906,7 +915,7 @@ def rank_chunks(conn, backend, qtext, mode, model, dims):
         bm25_list = bm25_rank(conn, backend, qtext, FUSION_DEPTH)
     if mode in ("hybrid", "vector"):
         try:
-            qvec = embed_batch([qtext], model)[0]
+            qvec = embed_batch([QUERY_PREFIX + qtext], model)[0]
             if dims is not None and len(qvec) != dims:
                 raise RuntimeError(
                     f"query embedding dim {len(qvec)} != index dim {dims}"

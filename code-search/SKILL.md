@@ -79,3 +79,4 @@ authorization required.
 
 - [Configuration, storage and dependencies](references/configuracion.md).
 - [Installing and using CodeGraph, AST and LSP for Java](references/herramientas-complementarias.md).
+- [Changing or comparing an embedding model](references/modelos-de-embedding.md) — read before swapping the model, adding a query prefix, or trusting a benchmark number.

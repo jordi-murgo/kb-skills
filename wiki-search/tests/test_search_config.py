@@ -210,3 +210,62 @@ class CodeSectionTypeTests(SearchConfigCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QueryPrefixTests(SearchConfigCase):
+    """Instruction-aware models need the prefix on the query, never on documents.
+
+    Missing prefix does not raise: the model returns vectors, the index stays
+    valid, and only relevance drops. On the code corpus that was MRR 0.478 vs
+    0.771, so a silent regression is the default outcome and needs a test.
+    """
+
+    config = (
+        "wiki_search:\n"
+        "  model: qwen3-embedding:0.6b\n"
+        '  query_prefix: "Instruct: retrieve the page\\nQuery:"\n'
+    )
+
+    def test_prefix_is_read_from_config(self):
+        module = self.wiki()
+        self.assertEqual(module.QUERY_PREFIX, "Instruct: retrieve the page\nQuery:")
+
+    def test_prefix_defaults_to_empty(self):
+        Path(self.root / "kb-config.yaml").write_text(
+            "wiki_search:\n  model: bge-m3\n", encoding="utf-8"
+        )
+        module = self.wiki()
+        self.assertEqual(module.QUERY_PREFIX, "")
+
+    def test_non_string_prefix_is_rejected(self):
+        Path(self.root / "kb-config.yaml").write_text(
+            "wiki_search:\n  query_prefix: [1, 2]\n", encoding="utf-8"
+        )
+        with self.assertRaises(SystemExit):
+            self.wiki()
+
+    def test_query_embedding_carries_the_prefix_but_documents_do_not(self):
+        module = self.wiki()
+        seen = []
+
+        def fake_embed(texts, _model):
+            seen.append(list(texts))
+            return [[0.5, 0.5] for _ in texts]
+
+        module.embed_batch = fake_embed
+        module.vector_rank = lambda conn, qvec, depth: []
+        module.rank_chunks(None, "fts5", "saml protocolo", "vector", "m", 2)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0][0], "Instruct: retrieve the page\nQuery:saml protocolo")
+
+    def test_bm25_ranking_uses_the_raw_query(self):
+        module = self.wiki()
+        captured = {}
+
+        def fake_bm25(conn, backend, qtext, depth):
+            captured["qtext"] = qtext
+            return []
+
+        module.bm25_rank = fake_bm25
+        module.rank_chunks(None, "fts5", "saml protocolo", "bm25", "m", 2)
+        self.assertEqual(captured["qtext"], "saml protocolo")

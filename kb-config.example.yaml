@@ -114,6 +114,10 @@ embeddings:
 #   endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
 #   db: .cache/wiki-search/index.db
 #   source_dirs: [wiki]
+#   # Instruction-aware models only (qwen3-embedding, e5-instruct): the prefix
+#   # goes on the QUERY, documents are embedded unchanged. Omitting it raises
+#   # nothing and only relevance drops (0.478 vs 0.771 MRR on a code corpus).
+#   query_prefix: "Instruct: Given a wiki search query, retrieve the page that answers it\nQuery:"
 #
 # code_search:                     # code-search (source files)
 #   model: ${CODE_SEM_MODEL:-qwen3-embedding:0.6b}
