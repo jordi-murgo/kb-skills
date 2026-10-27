@@ -100,6 +100,29 @@ embeddings:
   source_dirs:
     - wiki
 
+# --- per-search overrides ---
+# `embeddings` is the shared fallback. Each search skill also reads its own
+# section, and its own section wins key by key, so wiki search and code search
+# can use different models and endpoints from one file. Neither section is a
+# fallback for the other: a wiki model must never reach the code index.
+#
+# Precedence per key: <skill section>.<key> -> embeddings.<key> -> default.
+# Blank strings count as unset, so `model: ""` falls through to `embeddings`.
+#
+# wiki_search:                     # wiki-search (Markdown vault pages)
+#   model: ${WIKI_SEM_MODEL:-bge-m3}
+#   endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
+#   db: .cache/wiki-search/index.db
+#   source_dirs: [wiki]
+#
+# code_search:                     # code-search (source files)
+#   model: ${CODE_SEM_MODEL:-qwen3-embedding:0.6b}
+#   endpoint: ${CODE_OLLAMA_URL:-http://127.0.0.1:11434}
+#   source_dirs: [projects]
+#   query_prefix: "Instruct: Given a code search query, retrieve the source file that implements it\nQuery:"
+#   vector_weight: 8
+#   bm25_weight: 1
+
 # --- output trust (wiki-search) ---
 # An answer or summary an agent files back into the wiki is a CLAIM, not
 # knowledge, until its status says it was checked. Without this section every
@@ -131,6 +154,15 @@ code_search:
   # extensions: [.java, .py, .ts, .xml, .yaml, .json, .toml, .sh]
   # model: bge-m3
   # endpoint: ${WIKI_OLLAMA_URL}
+  # Los modelos "instruction-aware" (qwen3-embedding) rinden mucho mejor si la
+  # instrucción va SOLO en la consulta: 0.771 vs 0.478 MRR medido en 20 consultas
+  # de código. Sin ella degradan en silencio.
+  # Pesos de fusión RRF en modo hybrid. Por defecto 8 / 1: BM25 es mucho más
+  # débil que los embeddings sobre código (MRR 0.24 vs 0.77 medido), y con pesos
+  # iguales el híbrido caía a 0.50. BM25 sigue aportando en ficheros de config.
+  # vector_weight: 8
+  # bm25_weight: 1
+  # query_prefix: "Instruct: Given a code search query, retrieve the source file that implements it\nQuery:"
 
 decisions:
   # wiki-vetting System One server (base URL; /v1/systemone is appended).

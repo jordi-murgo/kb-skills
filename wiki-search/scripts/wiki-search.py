@@ -363,11 +363,27 @@ def source_files() -> dict[str, Path]:
 VAULT_ROOT = find_vault_root()
 load_env_files(VAULT_ROOT)
 _CFG = load_config_section(VAULT_ROOT, "embeddings")
-SOURCE_DIRS = source_directories(VAULT_ROOT, _CFG)
-_db = _CFG.get("db")
+# `wiki_search` is this skill's own section: it wins over the shared
+# `embeddings` section, so wiki and code search can use different models and
+# endpoints from one file. Precedence per key:
+#   wiki_search.<key> -> embeddings.<key> -> built-in default.
+# `code_search` is the symmetric section for the other search; neither leaks
+# into the other.
+_SEARCH = load_config_section(VAULT_ROOT, "wiki_search")
+
+
+def _merged(key, default=None):
+    value = _SEARCH.get(key)
+    if value is None or (isinstance(value, str) and not value.strip()):
+        value = _CFG.get(key, default)
+    return value
+
+
+SOURCE_DIRS = source_directories(VAULT_ROOT, {**_CFG, "source_dirs": _merged("source_dirs", ["wiki"])})
+_db = _merged("db")
 DEFAULT_DB = vault_path(VAULT_ROOT, _db, "embeddings.db") if _db else VAULT_ROOT / ".cache" / "wiki-search" / "index.db"
-DEFAULT_MODEL = _CFG.get("model") or "bge-m3"
-OLLAMA_URL = _CFG.get("endpoint") or "http://127.0.0.1:11434"
+DEFAULT_MODEL = _merged("model") or "bge-m3"
+OLLAMA_URL = _merged("endpoint") or "http://127.0.0.1:11434"
 DB_PATH = DEFAULT_DB
 
 # Output trust: an answer or summary an agent files back into the wiki is a
