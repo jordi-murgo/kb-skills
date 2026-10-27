@@ -150,5 +150,74 @@ class CalibrationSetTest(unittest.TestCase):
             self.assertIn("quote", row)
 
 
+class ApiKeyHeaderTest(unittest.TestCase):
+    """`call_systemone` must send a bearer token only when one is configured.
+
+    A hosted System One endpoint (decision.vllm-sr.ai) rejects the request with
+    401 and no useful message without it, while a local Ollama ignores the header.
+    The bug this guards: the function had no `api_key` parameter at all, so
+    `wiki-vetting` could not reach any remote decision service — found by trying
+    to measure d3-turbo through it.
+    """
+
+    def setUp(self):
+        import os
+        import tempfile
+
+        self.vault = Path(tempfile.mkdtemp(prefix="vet-apikey-"))
+        (self.vault / "wiki").mkdir()
+        (self.vault / ".git").mkdir()
+        self._cwd = Path.cwd()
+        os.chdir(self.vault)
+
+    def tearDown(self):
+        import os
+        import shutil
+
+        os.chdir(self._cwd)
+        shutil.rmtree(self.vault, ignore_errors=True)
+
+    def _capture_headers(self, api_key):
+        import builtins
+        import urllib.request
+
+        captured = {}
+        original = urllib.request.urlopen
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {"answers": {"q1": {"noul": 0.9}}}
+                ).encode("utf-8")
+
+        def fake_urlopen(request, timeout=None):
+            captured["headers"] = dict(request.headers)
+            return FakeResponse()
+
+        urllib.request.urlopen = fake_urlopen
+        try:
+            module = load_module()
+            module.call_systemone(
+                "http://example.test", {"questions": {"q1": {}}}, ["q1"], api_key
+            )
+        finally:
+            urllib.request.urlopen = original
+        return captured["headers"]
+
+    def test_no_header_when_no_key(self):
+        headers = self._capture_headers("")
+        self.assertNotIn("Authorization", headers)
+
+    def test_bearer_header_when_key_present(self):
+        headers = self._capture_headers("sk-test-123")
+        self.assertEqual(headers.get("Authorization"), "Bearer sk-test-123")
+
+
 if __name__ == "__main__":
     unittest.main()

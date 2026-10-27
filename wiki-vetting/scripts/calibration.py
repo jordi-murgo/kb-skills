@@ -107,6 +107,11 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true", help="Machine-readable output.")
     parser.add_argument("--model", default=_vet._CFG.get("model") or "clef-flash:9b")
     parser.add_argument("--endpoint", default=_vet._CFG.get("endpoint") or "http://127.0.0.1:11434")
+    parser.add_argument(
+        "--api-key",
+        default=_vet._API_KEY if hasattr(_vet, "_API_KEY") else "",
+        help="bearer token for a hosted decision endpoint; a local Ollama needs none.",
+    )
     args = parser.parse_args(argv)
 
     path = Path(args.set)
@@ -139,7 +144,7 @@ def main(argv=None):
     vault_index = _vet.load_vault_index()
     results = []
     for chunk, base_index, payload in _vet.chunk_requests(claims, vault_index, args.model):
-        answers = _vet.call_systemone(args.endpoint, payload, list(payload["questions"]))
+        answers = _vet.call_systemone(args.endpoint, payload, list(payload["questions"]), args.api_key)
         for offset, claim in enumerate(chunk):
             cid = f"c{base_index + offset}"
             skip = bool(claim.get("skip_grounded"))

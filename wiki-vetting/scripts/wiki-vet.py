@@ -117,6 +117,9 @@ def load_config_section(root: Path, section: str) -> dict:
 REPO_ROOT = find_vault_root()
 load_env_files(REPO_ROOT)
 _CFG = load_config_section(REPO_ROOT, "decisions")
+# Hosted decision services need a bearer token; a local Ollama does not. The
+# key never lives in kb-config.yaml (AGENTS.md rule 2), only in the environment.
+_API_KEY = _CFG.get("api_key") or ""
 
 
 VAULT_INDEX_PATH = REPO_ROOT / "wiki" / "index.md"
@@ -242,6 +245,13 @@ def parse_args(argv):
         help="inference server base URL (kb-config decisions.endpoint);"
         " /v1/systemone is appended.",
     )
+    parser.add_argument(
+        "--api-key",
+        default=_API_KEY,
+        help="bearer token for a hosted decision endpoint (kb-config"
+        " decisions.api_key, normally ${VAR} from the environment). A local"
+        " Ollama needs none.",
+    )
     return parser.parse_args(argv)
 
 
@@ -342,17 +352,26 @@ def is_transient_error(exc):
     return isinstance(exc, urllib.error.HTTPError) and exc.code >= 500
 
 
-def call_systemone(endpoint, payload, question_ids):
+def call_systemone(endpoint, payload, question_ids, api_key=""):
+    """POST one System One request and return {question_id: probability}.
+
+    `api_key` is optional: a local Ollama endpoint needs none, a hosted one
+    (e.g. decision.vllm-sr.ai) rejects the request with 401 without it. Send it
+    as a bearer token — the wire contract is otherwise identical, so the same
+    payload works against either."""
     if not endpoint.endswith("/v1/systemone"):
         endpoint = endpoint.rstrip("/") + "/v1/systemone"
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     last_error = None
     for attempt in (1, 2):
         try:
             request = urllib.request.Request(
                 endpoint,
                 data=body,
-                headers={"Content-Type": "application/json"},
+                headers=headers,
                 method="POST",
             )
             with urllib.request.urlopen(request, timeout=300) as response:
@@ -427,7 +446,7 @@ def main(argv=None):
     results = []
     for chunk, base_index, payload in chunk_requests(claims, vault_index, args.model):
         question_ids = list(payload["questions"])
-        answers = call_systemone(args.endpoint, payload, question_ids)
+        answers = call_systemone(args.endpoint, payload, question_ids, args.api_key)
         for offset, claim in enumerate(chunk):
             cid = f"c{base_index + offset}"
             skip = bool(claim.get("skip_grounded"))

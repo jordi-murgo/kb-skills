@@ -173,6 +173,10 @@ decisions:
   # questions are a RECORD keyed by id.
   model: ${WIKI_VET_MODEL:-clef-flash:9b}
   endpoint: ${WIKI_OLLAMA_URL:-http://127.0.0.1:11434}
+  # Optional bearer token for a HOSTED decision endpoint (e.g.
+  # https://decision.vllm-sr.ai, which serves vllm-sr/d3-turbo). A local Ollama
+  # needs none. Keep it in the environment, never in this file.
+  # api_key: ${WIKI_VET_API_KEY}
   # Per-axis decision thresholds. A single 0.5 cut for every axis accepts
   # unsupported quotes: the axes differ in cost and in how well the model
   # separates them. Tune with `scripts/calibration.py` over a labelled set —

@@ -22,6 +22,12 @@ Input: JSON array of `{"claim", "quote", "target_page", "source", "skip_grounded
 
 Each axis has its own threshold because they differ in cost: `sensitive` rejects at 0.30 (over-flagging a secret is cheap, missing one is not), `grounded` demands 0.90. A probability inside `band` of its threshold marks the axis *undecided* and forces `review` — the verdict carries `confidence` and `undecided_axes` so the caller sees how close the call was.
 
+**Measured (2026-10-27, 23 labelled cases, `scripts/calibration.py`):**
+`vllm-sr/d3-turbo` and `pplx-decider:27b-q4_K_M` score **identically** —
+grounded precision 1.00 / recall 0.615, sensitive 1.00 / 1.00 — but d3-turbo takes
+3.6 s against 87 s. Identical verdicts, 24× faster; it is not more accurate, so
+migrate for latency or to avoid running a 27B locally. Both fix the failure below.
+
 **Measured limit (clef-flash:9b, 23 labelled cases, 2026-10-19):** the `grounded` axis does **not** reliably separate a supporting quote from an adjacent-but-wrong one. Unsupported quotes scored 0.47–0.93; supported ones 0.59–0.96. At 0.90 the false-positive rate is 10% but only 60% of real claims pass. Do not treat `accept` as proof the quote supports the claim; read the probability and the source. Re-run `calibration.py` after any model or prompt change and compare the overlap, not just the aggregate.
 
 ## Workflow
