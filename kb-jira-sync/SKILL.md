@@ -24,9 +24,9 @@ misses. See [Stage 0 — TWG Discovery](#stage-0--twg-discovery-optional) below.
 
 ## Stage 0 — TWG Discovery (optional)
 
-The [`twg` CLI](https://www.npmjs.com/package/@twg/cli) connects to Atlassian
-Cloud via OAuth and provides graph traversal, semantic search (Rovo), and
-context discovery that the flat REST API import cannot match.
+The `twg` CLI connects to Atlassian Cloud via OAuth and provides graph
+traversal, semantic search (Rovo), and context discovery that the flat REST API
+import cannot match.
 
 **When to run it:** after the import, during the reconcile phase, when you
 need to find issues or pages related to the project that are not in the
@@ -35,8 +35,24 @@ related work items.
 
 **Prerequisites:**
 
-- `twg` installed (`curl -fsSL https://teamwork-graph.atlassian.com/cli/install | bash`)
+- `twg` installed on `PATH` (see below — install it deliberately, not with a
+  piped shell).
 - Authenticated against the project's Atlassian site
+
+**Installing `twg`.** Do not pipe the installer into a shell. Download it, read
+it, then run it with approval:
+
+```bash
+tmp_dir="$(mktemp -d)"; script="$tmp_dir/install.sh"
+curl -fsSL https://teamwork-graph.atlassian.com/cli/install -o "$script"
+less "$script"          # read before running
+```
+
+It is an Atlassian domain, the binary download is checksum-verified, and the
+script **posts installation telemetry to `as.atlassian.com` keyed by a stable
+`sha256` of your machine UUID** (macOS `IOPlatformUUID`, Linux `/etc/machine-id`).
+Export `DO_NOT_TRACK=1` before running it to suppress that. Only after reading it
+and saying what it does, run `bash "$script"` and delete `$tmp_dir`.
 
 **Project-local credentials.** TWG supports `TWG_CONFIG_DIR` to store
 credentials inside the project directory (gitignored) instead of the
