@@ -44,6 +44,33 @@ is 0.043 MRR, so the **minimum detectable effect is ≈0.121 RR** — any claim
 below that is not measurable on this gold set, no matter how good the story is.
 Report the MDE with the number.
 
+## 2b. Never edit the gold set or the metric while measuring
+
+The agent that improves the ranking can also edit the thing that scores it. Both
+live in `wiki-search.py`: `retrieval_metrics()`, `dedupe_pages()` and the `eval`
+report are in the same file as `bm25_rank`, `vector_rank` and `rrf_fuse`. Nothing
+in the repo stops an agent from "improving" the metric instead of the retrieval.
+
+Rules, borrowed from Karpathy's `autoresearch` (which forbids touching
+`prepare.py` and the eval harness, and says why: the agent must not rewrite its
+own criteria):
+
+- **The gold set is read-only during a change.** Editing `evals/wiki-search.json`
+  in the same working session as a ranking change invalidates the measurement.
+  If a query is genuinely wrong, fix it in its own change, re-measure the
+  baseline, and say so.
+- **The metric is read-only during a change.** `retrieval_metrics`,
+  `dedupe_pages` and the aggregation are ground truth. A change to them is a
+  separate change with its own justification, never a step inside a ranking
+  experiment.
+- **Check the baseline before you trust a delta.** Run `eval` on the unmodified
+  tree and compare against the number you are about to beat. If the baseline
+  moved and you did not move it, something else did.
+
+The tests in `wiki-search/tests/test_eval.py` pin hand-computed values for all
+four metrics, so a metric edit fails loudly rather than quietly raising the
+score. That is the guard; this section is the reason it must stay.
+
 ## 3. Write the test first and watch it fail
 
 For a cutoff-shaped change, build a fixture larger than the constant and assert
@@ -55,6 +82,22 @@ weights back to 1:1 passed all 54 tests, because the tests exercised the CLI and
 the weights were unreachable. Extracting `fuse_rankings()` made five behavioural
 tests possible, and the injection then failed three of them. **A gate that has
 never failed has never been tested** (AGENTS.md hard rule 3).
+
+## 3b. Weigh the complexity cost, not just the delta
+
+A significance test tells you a gain is real. It does not tell you the gain is
+worth the code. Borrowed from Karpathy's `autoresearch`, which makes this an
+explicit criterion rather than a matter of taste:
+
+- **A small gain from ugly code is a loss.** +0.01 MRR that adds twenty lines of
+  special-casing for one query shape is a net negative.
+- **The same gain from deleting code is a clear win.** If removing something
+  keeps the metric equal or better, delete it.
+- **Equal metric with simpler code: always keep the simplification.**
+
+In practice: before proposing a ranking change, state what it removes as well as
+what it adds. A change that only adds is a change that needs a bigger delta to
+justify itself.
 
 ## 4. Re-run the real eval, then the suite
 

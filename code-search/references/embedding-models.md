@@ -105,10 +105,19 @@ against hybrid 0.497 at 1:1.
    without collapsing them to pages — always dedupe by path before scoring.
 3. **Compare arms paired per query**, never only as aggregates: mean delta plus
    a sign test. Most queries are ties, and an aggregate hides that.
-4. **Validate the chosen value with split-half.** Pick the weight on half the
+4. **Freeze the gold set while you sweep.** `code-search.py` has no `eval`
+   subcommand: the gold set (`tests/gold-code.json`) is scored by whatever script
+   the experiment writes, which means that script decides the result. Keep the
+   scoring code out of the change under test, and re-run it against the unmodified
+   tree first. If the baseline moved and you did not move it, something else did.
+
+   (By contrast `wiki-search.py eval` computes the metrics itself, so there the
+   metric functions — `retrieval_metrics`, `dedupe_pages`, the aggregation — are
+   the frozen thing. See `wiki-search/references/ranking-changes.md` § 2b.)
+5. **Validate the chosen value with split-half.** Pick the weight on half the
    queries, measure it on the other half. 8:1 picked on half A scored 0.900 on
    half B.
-5. **Refuse gains that are not significant.** w=25 scored 0.804 — above even
+6. **Refuse gains that are not significant.** w=25 scored 0.804 — above even
    vector-only 0.771 — but beat w=8 by 4 wins / 0 losses, p=0.125 at n=20. A
    point estimate that beats a channel removed entirely is overfitting. Ship the
    conservative validated value and say why.
