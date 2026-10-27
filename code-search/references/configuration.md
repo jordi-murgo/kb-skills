@@ -92,7 +92,7 @@ or running `init` for the chosen project. `init` creates and builds the external
 graph at `<project>/.codegraph/`, the authorized exception to engine state in
 `.cache/code-search/`; it must be excluded from Git in every repository or
 submodule. Never build indiscriminate vault-wide graphs. See
-[installing and using companion tools](herramientas-complementarias.md).
+[installing and using companion tools](companion-tools.md).
 
 ## Local registration
 

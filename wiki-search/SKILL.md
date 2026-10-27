@@ -60,5 +60,5 @@ For retrieval-only requests, return ranked page/heading candidates. For answers,
 
 - [Index commands and configuration](references/index.md)
 - [Answer filing and navigation](references/answers.md)
-- [Changing retrieval ranking: measure, then prove the gate fails](references/cambios-de-ranking.md) — read before touching fusion, chunking, BM25 matching or the embedding model.
+- [Changing retrieval ranking: measure, then prove the gate fails](references/ranking-changes.md) — read before touching fusion, chunking, BM25 matching or the embedding model.
 - [Self-contained engine](scripts/wiki-search.py)

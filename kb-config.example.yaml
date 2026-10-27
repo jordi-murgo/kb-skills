@@ -150,20 +150,20 @@ embeddings:
 #  require_evidence: false
 
 code_search:
-  # Índice de código independiente, almacenado en .cache/code-search/.
-  # Hereda embeddings.model/endpoint; source_dirs NO se hereda de embeddings.
+  # Independent code index, stored under .cache/code-search/.
+  # Inherits embeddings.model/endpoint; source_dirs is NOT inherited.
   source_dirs:
     - projects
-  # Opcionales: sustituir extensiones o modelo/endpoint para este índice.
+  # Optional: override extensions or model/endpoint for this index only.
   # extensions: [.java, .py, .ts, .xml, .yaml, .json, .toml, .sh]
   # model: bge-m3
   # endpoint: ${WIKI_OLLAMA_URL}
-  # Los modelos "instruction-aware" (qwen3-embedding) rinden mucho mejor si la
-  # instrucción va SOLO en la consulta: 0.771 vs 0.478 MRR medido en 20 consultas
-  # de código. Sin ella degradan en silencio.
-  # Pesos de fusión RRF en modo hybrid. Por defecto 8 / 1: BM25 es mucho más
-  # débil que los embeddings sobre código (MRR 0.24 vs 0.77 medido), y con pesos
-  # iguales el híbrido caía a 0.50. BM25 sigue aportando en ficheros de config.
+  # "Instruction-aware" models (qwen3-embedding) perform much better when the
+  # instruction goes on the QUERY only: MRR 0.771 vs 0.478 measured on 20 code
+  # queries. Without it they degrade silently.
+  # RRF fusion weights in hybrid mode. Default 8 / 1: BM25 is much weaker than
+  # embeddings on code (MRR 0.24 vs 0.77 measured), and equal weights dropped
+  # hybrid to 0.50. BM25 still contributes on configuration files.
   # vector_weight: 8
   # bm25_weight: 1
   # query_prefix: "Instruct: Given a code search query, retrieve the source file that implements it\nQuery:"

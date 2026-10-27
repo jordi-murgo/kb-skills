@@ -214,7 +214,7 @@ this skill: Address Validation (DragonScale), Semantic Tiling, Title Overlap and
 Bilingual Terminology.
 
 **MANDATORY**: before running any of them, read
-[`references/verificar-que-falla.md`](references/verificar-que-falla.md) before
+[`references/verify-failure.md`](references/verify-failure.md) before
 trusting a new check: one fault per fresh vault, the mandatory `git init`, the
 YAML-scalar trap, and the per-check scan scopes. A gate that has never failed has
 never been tested.
