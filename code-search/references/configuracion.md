@@ -15,8 +15,16 @@ code_search:
   # Optional: restrict languages and configuration; values replace the default list.
   # extensions: [.java, .xml, .yaml, .json, .toml, .sh]
   # Optional: inherit embeddings.model and embeddings.endpoint when omitted.
+  # Set them here to give code search its own embedding model and endpoint,
+  # independently of wiki_search. The two sections never fall back to each
+  # other, only to the shared `embeddings` section.
   # model: bge-m3
   # endpoint: ${WIKI_OLLAMA_URL}
+  # Optional: fusion weights for hybrid mode. Default 8 / 1.
+  # vector_weight: 8
+  # bm25_weight: 1
+  # Optional: instruction-aware models need the task instruction on the QUERY only.
+  # query_prefix: "Instruct: Given a code search query, retrieve the source file that implements it\nQuery:"
 ```
 
 | Key | Contract |
@@ -25,6 +33,8 @@ code_search:
 | `extensions` | Non-empty list of suffixes including the dot. Defaults: `.java`, `.py`, `.ts`, `.tsx`, `.js`, `.jsx`, `.go`, `.rs`, `.c`, `.h`, `.cpp`, `.hpp`, `.cs`, `.kt`, `.kts`, `.swift`, `.sh`, `.ps1`, `.sql`, `.yaml`, `.yml`, `.json`, `.xml`, `.toml`. Includes tests and configuration, not only production code. Markdown needs an explicit `.md`. |
 | `model` | Explicit value → `embeddings.model` → `bge-m3`. |
 | `endpoint` | HTTP(S) base URL, without credentials, query or fragment; `/api/embed` is appended. Explicit value → `embeddings.endpoint` → `http://127.0.0.1:11434`. |
+| `vector_weight`, `bm25_weight` | Non-negative numbers for weighted RRF in `hybrid` mode; defaults `8` and `1`. At least one must be non-zero. Lexical matching is much weaker than embeddings on source code — BM25 alone scored MRR 0.24 against 0.77 for vector on a 20-query gold set, and equal weights gave 0.50. At 8:1 hybrid reaches 0.74; higher weights scored better but not significantly (4 wins, 0 losses, p=0.125), so 8 is the conservative validated value. Lexical still earns its share on config files. |
+| `query_prefix` | Prepended to the **query** before embedding; documents are embedded unchanged. Default `""`. Required for instruction-aware models: `qwen3-embedding` scores MRR 0.771 with its instruction and 0.478 without on a 20-query code gold set (vector mode, 53 files). Wrong or missing, it degrades silently. |
 
 `${VAR}` and `${VAR:-default}` macros expand recursively. Precedence: process
 environment → `.env.local` → `.env`; those files only supply values to macros.

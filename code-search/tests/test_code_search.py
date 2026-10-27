@@ -217,12 +217,71 @@ class ConfigTests(VaultCase):
         with self.assertRaises(CODE.CodeSearchError):
             CODE.expand_macros({"nested": ["${A}"]}, {"A": "${B}", "B": "${A}"})
 
+    def test_fusion_weights_are_validated_and_default_to_eight_to_one(self):
+        config = self.write_config({})
+        self.assertEqual((config.vector_weight, config.bm25_weight), (8.0, 1.0))
+        config = self.write_config({"vector_weight": 4, "bm25_weight": 2})
+        self.assertEqual((config.vector_weight, config.bm25_weight), (4.0, 2.0))
+        for bad in ({"vector_weight": -1}, {"bm25_weight": "x"},
+                    {"vector_weight": True}, {"vector_weight": 0, "bm25_weight": 0}):
+            with self.subTest(value=bad), self.assertRaises(CODE.CodeSearchError):
+                self.write_config(bad)
+
+    def test_query_prefix_is_optional_and_must_be_a_string(self):
+        config = self.write_config({"query_prefix": "Instruct: x\nQuery:"})
+        self.assertEqual(config.query_prefix, "Instruct: x\nQuery:")
+        self.assertEqual(self.write_config({}).query_prefix, "")
+        for bad in (42, None, ["a"], {"a": 1}):
+            with self.subTest(value=bad), self.assertRaises(CODE.CodeSearchError):
+                self.write_config({"query_prefix": bad})
+
     def test_embedding_setting_types_and_unsafe_urls_are_rejected(self):
         for setting in ({"model": None}, {"model": ""}, {"endpoint": 42}, {"endpoint": ""},
                         {"endpoint": "file:///tmp/model"}, {"endpoint": "http://user:secret@host"},
                         {"endpoint": "http://host?input=1"}, {"endpoint": "http://host#fragment"}):
             with self.subTest(setting=setting), self.assertRaises(CODE.CodeSearchError):
                 self.write_config(setting)
+
+
+class FusionTests(unittest.TestCase):
+    """Weighted RRF: lexical is down-weighted, and both channels still count."""
+
+    def rows(self, *spec):
+        return [(cid, 0.0, path, 1) for cid, path in spec]
+
+    def test_only_lexical_matches_keeps_them(self):
+        ranked = CODE.fuse_rankings(self.rows((1, "a.py")), [], 8.0, 1.0)
+        self.assertEqual([row[2] for row in ranked], ["a.py"])
+
+    def test_only_semantic_matches_keeps_them(self):
+        ranked = CODE.fuse_rankings([], self.rows((1, "a.py"), (2, "b.py")), 8.0, 1.0)
+        self.assertEqual([row[2] for row in ranked], ["a.py", "b.py"])
+
+    def test_equal_channel_rank_ties_and_vector_weight_breaks_it(self):
+        lexical = self.rows((1, "lex.py"))
+        semantic = self.rows((1, "lex.py"))
+        tied = CODE.fuse_rankings(lexical, semantic, 1.0, 1.0)
+        self.assertEqual(len(tied), 1)
+        self.assertAlmostEqual(tied[0][1], 2.0 / (CODE.RRF_K + 1))
+        weighted = CODE.fuse_rankings(lexical, semantic, 8.0, 1.0)
+        self.assertAlmostEqual(weighted[0][1], 9.0 / (CODE.RRF_K + 1))
+
+    def test_zero_weight_drops_that_channel(self):
+        lexical = self.rows((1, "lex.py"))
+        semantic = self.rows((2, "vec.py"))
+        only_vec = CODE.fuse_rankings(lexical, semantic, 8.0, 0.0)
+        self.assertEqual([row[2] for row in only_vec], ["vec.py"])
+        only_lex = CODE.fuse_rankings(lexical, semantic, 0.0, 1.0)
+        self.assertEqual([row[2] for row in only_lex], ["lex.py"])
+
+    def test_lexical_can_outrank_a_lower_ranked_vector_hit(self):
+        # With weights 1:1 the channel ranks decide nothing; the weights must.
+        lexical = self.rows((1, "lex.py"))
+        semantic = self.rows((2, "vec1.py"), (3, "vec2.py"))
+        ranked = CODE.fuse_rankings(lexical, semantic, 8.0, 1.0)
+        self.assertEqual(ranked[0][2], "vec1.py")
+        ranked_lex = CODE.fuse_rankings(lexical, semantic, 0.2, 1.0)
+        self.assertEqual(ranked_lex[0][2], "lex.py")
 
 
 class SelectionTests(GitVaultCase):

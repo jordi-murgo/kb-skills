@@ -1,0 +1,25 @@
+{
+"name": "sbd-code-gold-v1",
+"queries": [
+ {"id": "c01", "category": "paraphrase", "text": "donde se cifra la credencial con RSA", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/core/encryption/CredentialCipher.java"]},
+ {"id": "c02", "category": "paraphrase", "text": "extraer la clave publica del certificado X509", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/core/certificate/X509PublicKeyExtractor.java"]},
+ {"id": "c03", "category": "paraphrase", "text": "origen del certificado desde secrets manager", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/adapter/SecretsManagerCertificateSource.java"]},
+ {"id": "c04", "category": "paraphrase", "text": "mapear errores de dominio a respuesta HTTP", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/handler/HttpResponseMapper.java"]},
+ {"id": "c05", "category": "paraphrase", "text": "parsear la peticion HTTP entrante", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/handler/HttpRequestParser.java"]},
+ {"id": "c06", "category": "paraphrase", "text": "procesador que orquesta el cifrado de una peticion", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/core/EncryptionRequestProcessor.java"]},
+ {"id": "c07", "category": "paraphrase", "text": "leer variables de entorno y configuracion", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/core/environment/Environment.java"]},
+ {"id": "c08", "category": "paraphrase", "text": "validaciones de la peticion de cifrado", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/core/request/EncryptionRequest.java"]},
+ {"id": "c09", "category": "exact-id", "text": "EncryptHandler", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/handler/EncryptHandler.java"]},
+ {"id": "c10", "category": "exact-id", "text": "CredentialCipher", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/core/encryption/CredentialCipher.java"]},
+ {"id": "c11", "category": "cross-language", "text": "how is the credential encrypted with RSA", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/core/encryption/CredentialCipher.java"]},
+ {"id": "c12", "category": "cross-language", "text": "lambda handler entry point for encryption requests", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/handler/EncryptHandler.java"]},
+ {"id": "c13", "category": "config", "text": "dependencias y plugins de maven", "relevant": ["projects/lambda-cifrado-credenciales/pom.xml"]},
+ {"id": "c14", "category": "config", "text": "definicion de la funcion lambda en la plantilla SAM", "relevant": ["projects/lambda-cifrado-credenciales/template.yaml"]},
+ {"id": "c15", "category": "test", "text": "test que comprueba el aislamiento entre paquetes", "relevant": ["projects/lambda-cifrado-credenciales/src/test/java/com/bancsabadell/sbd/lambda/core/ArchitectureIsolationTest.java"]},
+ {"id": "c16", "category": "test", "text": "cliente falso de secrets manager para tests", "relevant": ["projects/lambda-cifrado-credenciales/src/test/java/com/bancsabadell/sbd/lambda/adapter/support/FakeSecretsManagerClient.java"]},
+ {"id": "c17", "category": "error", "text": "error tecnico de infraestructura", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/core/errors/TechnicalError.java"]},
+ {"id": "c18", "category": "error", "text": "error de validacion de entrada", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/core/errors/ValidationError.java"]},
+ {"id": "c19", "category": "paraphrase", "text": "cliente de AWS secrets manager", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/adapter/SecretsManagerClients.java"]},
+ {"id": "c20", "category": "paraphrase", "text": "resultado del proceso de cifrado", "relevant": ["projects/lambda-cifrado-credenciales/src/main/java/com/bancsabadell/sbd/lambda/core/EncryptionResult.java"]}
+]
+}

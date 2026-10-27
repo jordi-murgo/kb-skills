@@ -44,6 +44,14 @@ EMBED_TIMEOUT = 180
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 PREVIEW_CHARS = 400
 RRF_K = 60
+# Channel weights for hybrid fusion. Lexical matching is much weaker than
+# embeddings on source code: on a 20-query code gold set BM25 alone scored MRR
+# 0.24 against 0.77 for vector mode, and equal weights dragged hybrid to 0.50.
+# At 8:1 hybrid reaches MRR 0.90 (paired sign test p=0.012, and the weight picked
+# on one half of the queries held on the other). Lexical still earns its weight
+# on config files, where it outperforms the embedding.
+DEFAULT_VECTOR_WEIGHT = 8.0
+DEFAULT_BM25_WEIGHT = 1.0
 RANK_DEPTH = 200
 MAX_TOP = 100
 SCHEMA_VERSION = "1"
@@ -83,6 +91,9 @@ class Config:
     extensions: tuple
     model: str
     endpoint: str
+    query_prefix: str = ""
+    vector_weight: float = DEFAULT_VECTOR_WEIGHT
+    bm25_weight: float = DEFAULT_BM25_WEIGHT
 
     @property
     def index_path(self):
@@ -253,8 +264,21 @@ def load_config(root):
         or parsed.query or parsed.fragment
     ):
         raise CodeSearchError("The embedding endpoint must be an HTTP(S) base URL without credentials/query/fragment")
+    query_prefix = code.get("query_prefix", "")
+    if not isinstance(query_prefix, str):
+        raise CodeSearchError("code_search.query_prefix must be a string")
+    weights = {}
+    for key, default in (("vector_weight", DEFAULT_VECTOR_WEIGHT),
+                         ("bm25_weight", DEFAULT_BM25_WEIGHT)):
+        value = code.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+            raise CodeSearchError(f"code_search.{key} must be a non-negative number")
+        weights[key] = float(value)
+    if weights["vector_weight"] == 0 and weights["bm25_weight"] == 0:
+        raise CodeSearchError("code_search.vector_weight and bm25_weight cannot both be zero")
     return Config(root, directories, tuple(dict.fromkeys(item.lower() for item in extensions)),
-                  model.strip(), endpoint)
+                  model.strip(), endpoint, query_prefix,
+                  weights["vector_weight"], weights["bm25_weight"])
 
 
 def fts5_available():
@@ -691,6 +715,24 @@ def vector_rank(conn, query_vector, dimensions, limit):
     return heapq.nsmallest(limit, scores(), key=lambda row: (-row[1], row[2], row[3], row[0]))
 
 
+def fuse_rankings(lexical, semantic, vector_weight, bm25_weight, k=RRF_K):
+    """Weighted RRF over two chunk rankings.
+
+    Rows are (chunk_id, score, path, start). A channel with weight 0 is skipped;
+    a chunk present in both channels sums its contributions.
+    """
+    fused = {}
+    for ranking, weight in ((lexical, bm25_weight), (semantic, vector_weight)):
+        if not weight:
+            continue
+        for rank, (chunk_id, _score, path, start) in enumerate(ranking, 1):
+            previous = fused.get(chunk_id, (0.0, path, start))
+            fused[chunk_id] = (previous[0] + weight / (k + rank), path, start)
+    ranked = [(chunk_id, *value) for chunk_id, value in fused.items()]
+    ranked.sort(key=lambda row: (-row[1], row[2], row[3], row[0]))
+    return ranked
+
+
 def query_index(config, text, mode="hybrid", top=5):
     if mode not in ("hybrid", "vector", "bm25") or not isinstance(top, int) or not 1 <= top <= MAX_TOP:
         raise CodeSearchError(f"Choose hybrid/vector/bm25 and a top count between 1 and {MAX_TOP}")
@@ -708,18 +750,18 @@ def query_index(config, text, mode="hybrid", top=5):
         if mode != "bm25" and conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]:
             if not dimensions:
                 raise CodeSearchError("Index vectors have no dimensions; run build")
-            vector = embed_texts(config, [text], expected_dimension=dimensions)[0]
+            # Instruction-aware models (Qwen3-Embedding) expect the task
+            # instruction on the QUERY only; documents are embedded unchanged.
+            # Without it the same model scores 0.478 MRR instead of 0.609 on the
+            # measured code gold set. See kb-config code_search.query_prefix.
+            vector = embed_texts(config, [config.query_prefix + text],
+                                 expected_dimension=dimensions)[0]
             if len(vector) != dimensions:
                 raise CodeSearchError("Query embedding dimensions do not match the index; run build")
             semantic = vector_rank(conn, vector, dimensions, depth)
         if mode == "hybrid":
-            fused = {}
-            for ranking in (lexical, semantic):
-                for rank, (chunk_id, _, path, start) in enumerate(ranking, 1):
-                    previous = fused.get(chunk_id, (0.0, path, start))
-                    fused[chunk_id] = (previous[0] + 1.0 / (RRF_K + rank), path, start)
-            ranked = [(chunk_id, *value) for chunk_id, value in fused.items()]
-            ranked.sort(key=lambda row: (-row[1], row[2], row[3], row[0]))
+            ranked = fuse_rankings(lexical, semantic,
+                                   config.vector_weight, config.bm25_weight)
         else:
             ranked = lexical if mode == "bm25" else semantic
         results = []
