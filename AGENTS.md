@@ -10,6 +10,12 @@ consume copies; changes that benefit every project belong here.
   that owns them** — a skill copied on its own into a project stays functional.
   No shared import module between skills; a helper that more than one skill
   needs gets inlined, not imported (precedent: `wiki-lint/scripts/run-lint.py`).
+- **SKILL.md budget: 5,000 tokens / 500 lines, enforced by
+  `tests/test_skill_budget.py`.** The test measures bytes (18,000) because the
+  suite is stdlib-only and `tiktoken` is not stdlib; on this corpus the mean is
+  4.01 bytes/token and the densest skill is 3.66, so the byte cap cannot pass a
+  skill over the token budget. Over budget means move detail into a
+  `references/` file the skill reads explicitly — not shorten the body.
 - SKILL.md frontmatter: `name`, `description` with trigger phrases in English
   (the fleet's common language; non-English trigger phrases are additive, never
   the only description), optional `argument-hint`, and `allowed-tools` as a
