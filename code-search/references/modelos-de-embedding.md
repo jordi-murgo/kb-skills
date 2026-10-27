@@ -87,6 +87,35 @@ Gotchas that cost real time:
 - Both arms must produce the **same dimensions**, or you are measuring a schema
   change.
 
+## 5. Tuning fusion weights
+
+Fusion weights are a retrieval change like any other, and they need the same
+discipline. `vector_weight` and `bm25_weight` default to 8:1 because equal
+weights halve the better channel: on the code gold set, vector-only scored 0.771
+against hybrid 0.497 at 1:1.
+
+1. **Build the gold set from the real corpus.** List what is indexed
+   (`SELECT DISTINCT path FROM chunks`), then write 15-20 queries carrying their
+   exact target path. Mix categories: `paraphrase`, `exact-id`,
+   `cross-language`, `config`, `test`, `error`. Commit it next to the tests
+   (`code-search/tests/gold-code.json`) so the next measurement is comparable.
+2. **Sweep through the real code path.** Write the config key, run
+   `code-search.py query`, restore the config in a `finally`. A scratch
+   simulation of RRF produced nonsense once (MRR 0.09) because it ranked chunks
+   without collapsing them to pages — always dedupe by path before scoring.
+3. **Compare arms paired per query**, never only as aggregates: mean delta plus
+   a sign test. Most queries are ties, and an aggregate hides that.
+4. **Validate the chosen value with split-half.** Pick the weight on half the
+   queries, measure it on the other half. 8:1 picked on half A scored 0.900 on
+   half B.
+5. **Refuse gains that are not significant.** w=25 scored 0.804 — above even
+   vector-only 0.771 — but beat w=8 by 4 wins / 0 losses, p=0.125 at n=20. A
+   point estimate that beats a channel removed entirely is overfitting. Ship the
+   conservative validated value and say why.
+
+Weights are not a licence to zero the lexical channel: BM25 still wins on
+`config` queries (0.75 at both w=8 and w=25, against 0.50 vector-only).
+
 ## 5. Report the per-mode table, then the noise floor
 
 Run `--mode bm25`, `--mode vector` and `--mode hybrid` separately; equal-weight
