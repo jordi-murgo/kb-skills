@@ -9,8 +9,8 @@ allowed-tools: Read Bash WebSearch
 Turn an external source into a **bounded adoption decision**, not a feature list or a code-copying exercise. Evaluate what it contributes to the current project, where it fits, how to validate it, and whether rights permit the proposed reuse.
 
 ```bash
-python3 scripts/license-gate.py inspect /tmp/candidate --json
-python3 scripts/license-gate.py compat /tmp/candidate /path/to/target --json
+python3 .agents/skills/vampirize/scripts/license-gate.py inspect /tmp/candidate --json
+python3 .agents/skills/vampirize/scripts/license-gate.py compat /tmp/candidate /path/to/target --json
 ```
 
 The licence gate is conservative engineering policy, not legal advice. A non-zero result means **do not copy code**. For `kb-skills`, direct-code reuse is closed until the target repository declares a licence.

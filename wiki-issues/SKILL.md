@@ -1,6 +1,6 @@
 ---
 name: wiki-issues
-description: Own the wiki/meta/OPEN-ISSUES.md issue stack end-to-end — push (synthesize session todos/insights into new stack entries with fresh IDs) and pop (verify and work exactly one top-of-stack issue). Triggers on "handoff", "synthesize issues", "file open issues", "fix issues", "work the top issue", "pop an issue", "open-issues stack".
+description: Own the wiki/meta/OPEN-ISSUES.md issue stack end-to-end — push (synthesize session todos/insights into new stack entries with fresh IDs) and pop (verify and work exactly one top-of-stack issue). Triggers on "handoff", "synthesize issues", "file open issues", "fix issues", "work the top issue", "pop an issue", "open-issues stack". Not for detecting wiki defects (use `wiki-lint`) or general saving (use `save`).
 allowed-tools: Read Write Edit Bash Grep Glob
 ---
 

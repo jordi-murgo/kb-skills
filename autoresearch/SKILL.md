@@ -324,10 +324,7 @@ Open questions filed: N
 
 ## Constraints
 
-Follow the limits in `references/program.md`:
-- Max rounds (default: 3)
-- Max pages per session (default: 15)
-- Confidence scoring rules
-- Source preference rules
-
-If a constraint conflicts with completeness, respect the constraint and note what was left out in the Open Questions section.
+All limits live in `references/program.md` (loop caps, confidence scoring, source
+preference) — read it there rather than from a second copy here, so the two cannot
+drift. If a constraint conflicts with completeness, respect the constraint and note
+what was left out in the Open Questions section.

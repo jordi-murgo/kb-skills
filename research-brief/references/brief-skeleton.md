@@ -25,7 +25,7 @@ related:
 
 # Brief — <task-id>: <Short Title>
 
-Self-contained brief for the `autoresearch` loop. Conforms to W1-W12 (see `agent-based-knowledge-management/skills/research-brief/references/conventions.md`).
+Self-contained brief for the `autoresearch` loop. Conforms to W1-W12 (see [conventions.md](conventions.md)).
 
 ## Topic
 

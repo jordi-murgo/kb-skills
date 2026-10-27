@@ -6,6 +6,7 @@ description: >
   empty sections. Maintains the plain-Markdown lint-health dashboard. Triggers on: "lint",
   "health check", "clean up wiki", "check the wiki", "wiki maintenance",
   "find orphans", "wiki audit".
+  Not for fixing the issues it finds (use `wiki-issues`) or answering questions (use `wiki-search`).
 ---
 
 # wiki-lint: Wiki Health Check
@@ -62,6 +63,12 @@ Work through these in order:
 16. **Source citations** (deterministic, error-gated). Validates `^[source]`, `^[source:L1-L2]` and `^[source#L1-L2]` markers in wiki pages (`scripts/lint-citations.py`, aggregated into `run-lint.py`). Errors: cited file missing, malformed marker, reversed or zero-start range. Warnings: range past end of file. Markers inside fenced code are ignored. Cited paths are relative to the vault root, normally under `.raw/`. A citation metrics report (coverage stats over the same markers; not a gate) is available via `scripts/citation-metrics.py`.
 17. **Stale citations** (deterministic, error-gated). A cited source file changed on disk after ingest — its current hash no longer matches the hash recorded in `.raw/.manifest.json` — or the cited file was never ingested (absent from the manifest) (`scripts/lint-stale-citations.py`, aggregated into `run-lint.py`). Re-run the ingest for any flagged source, then re-validate the citations that point at it.
 
+
+
+**Standalone scripts (outside the gate).** `scripts/wiki-survey.py` prints a compact
+table of frontmatter + first heading + first callout per page — use it to compare pages
+when evaluating merges, dedup or index changes. `scripts/citation-metrics.py` reports
+citation coverage (a report, not a gate). Neither runs inside `run-lint.py`.
 ---
 
 ## Lint Report Format

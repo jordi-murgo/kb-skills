@@ -11,10 +11,10 @@ Pages that describe repo files (scripts, configs, results) age silently. This re
 ## Commands
 
 ```bash
-python3 scripts/wiki-sync.py                 # full-history report
-python3 scripts/wiki-sync.py --since         # only commits after the last sync point
-python3 scripts/wiki-sync.py --commit        # report + write the sync point
-python3 scripts/wiki-sync.py --json
+python3 .agents/skills/wiki-sync/scripts/wiki-sync.py                 # full-history report
+python3 .agents/skills/wiki-sync/scripts/wiki-sync.py --since         # only commits after the last sync point
+python3 .agents/skills/wiki-sync/scripts/wiki-sync.py --commit        # report + write the sync point
+python3 .agents/skills/wiki-sync/scripts/wiki-sync.py --json
 ```
 
 State at `.cache/sync.json`. Read-only for `wiki/**` and `.raw/**`. Run it from

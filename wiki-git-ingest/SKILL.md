@@ -11,8 +11,8 @@ The vault tracks not just this project but the projects it depends on. New commi
 ## Commands
 
 ```bash
-python3 scripts/wiki-git-ingest.py repos                      # watched + last seen
-python3 scripts/wiki-git-ingest.py scan [--json] [--commit] [names...]
+python3 .agents/skills/wiki-git-ingest/scripts/wiki-git-ingest.py repos                      # watched + last seen
+python3 .agents/skills/wiki-git-ingest/scripts/wiki-git-ingest.py scan [--json] [--commit] [names...]
 ```
 
 The watch list is CONFIG, not state: the `repos` section of kb-config.yaml, map keyed by name, value = **a git remote URL** — the same string git understands in `.git/config`, any forge (a corporate GitLab, another corporate GitLab, Azure DevOps, Bitbucket, GitHub, ...). No APIs, no tokens: repos are tracked with git itself and YOUR credentials — a blobless bare mirror under `.cache/remotes/<name>.git`, cloned once, fetched each scan; new tags (name, date, annotated-tag subject) become claims. For a repo already on this machine use a `{path: <clone>}` mapping instead (changelog diff + conventional commits). Optional `{remote: ..., target_page: ...}` mapping form; `${VAR}` macros expand like everywhere else. Edit the yaml to watch/unwatch.

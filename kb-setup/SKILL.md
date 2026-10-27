@@ -145,8 +145,10 @@ python3 .agents/skills/wiki-lint/scripts/run-lint.py           # human report
 python3 .agents/skills/wiki-lint/scripts/run-lint.py --json    # pipelines
 ```
 
-Exit `1` if any check fails. Checks: `lint-dead-links.py`, `lint-orphans.py`,
-`lint-frontmatter.py`, `lint-contradictions.py`.
+Exit `1` if any check fails. Checks: ten, enumerated in `wiki-lint/SKILL.md` § Lint Checks
+(`lint-dead-links.py`, `lint-orphans.py`,
+`lint-frontmatter.py`, `lint-contradictions.py`, `lint-relations.py`, `lint-empty-sections.py`,
+`lint-citations.py`, `lint-stale-citations.py`, `lint-tag-taxonomy.py`, `lint-misplaced-pages.py`).
 
 ### Verify a gate before trusting it
 

@@ -8,6 +8,7 @@ description: >
   "save to wiki", "save this session", "file this conversation", "keep this",
   "save this analysis", "add this to the wiki".
 allowed-tools: Read Write Edit Glob Grep
+  Not for ingesting an external source (use `wiki-ingest`) or running research (use `autoresearch`).
 ---
 
 # save: File Conversations Into the Wiki

@@ -11,9 +11,9 @@ A gate between "we read it" and "the wiki says it". Claims are scored by a local
 ## Commands
 
 ```bash
-python3 scripts/wiki-vet.py --claims claims.json [--json] [--model M] [--endpoint URL]
-python3 scripts/calibration.py --set tests/calibration-set.json   # measure before trusting
-python3 scripts/wiki-lifecycle.py [--json]
+python3 .agents/skills/wiki-vetting/scripts/wiki-vet.py --claims claims.json [--json] [--model M] [--endpoint URL]
+python3 .agents/skills/wiki-vetting/scripts/calibration.py --set .agents/skills/wiki-vetting/tests/calibration-set.json   # measure before trusting
+python3 .agents/skills/wiki-vetting/scripts/wiki-lifecycle.py [--json]
 ```
 
 Input: JSON array of `{"claim", "quote", "target_page", "source", "skip_grounded"}`. Verdicts: `accept` (write it), `reject` (ungrounded or sensitive — drop or sanitize and re-vet), `review` (human decides, or an axis landed inside its uncertainty band). Config in kb-config.yaml `decisions`: `model` (default `clef-flash:9b`), `endpoint` (server base URL; `/v1/systemone` appended) and `thresholds` (per-axis cuts plus `band`). `${VAR}` macros expand from the environment incl. vault-root `.env`/`.env.local` (`.env.example`). CLI flags beat config.

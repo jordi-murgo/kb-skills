@@ -1,7 +1,7 @@
 ---
 name: wiki-ingest
 description: "Ingest sources into the wiki vault. Reads a source, extracts entities and concepts, creates or updates wiki pages, cross-references, and logs the operation. Supports files, URLs, and batch mode. Optional `review` flag adds a pre-ingest human-in-the-loop gate that flags doubtful URL content (ads, nav, off-topic) with annotated recommendations before writing to .raw/. After writing, runs a semantic verification pass (wiki-search retrieval + System One judgment) that flags contradictions, duplicates and missing cross-references against existing pages. Triggers on: ingest, process this source, add this to the wiki, read and file this, batch ingest, ingest all of these, ingest this url."
-argument-hint: "[file-or-url] [review] [force]"
+argument-hint: "[file-or-url] [review] [force] Not for converting .docx/.pdf/.pptx sources (use `doc-pipeline`) or saving the current conversation (use `save`)."
 ---
 
 # wiki-ingest: Source Ingestion
@@ -181,7 +181,9 @@ Token budget matters. Follow these rules during ingest:
 - Read only 3-5 existing pages per ingest. If you need 10+, you are reading too broadly.
 - Use PATCH for surgical edits. Never re-read an entire file just to update one field.
 - Keep wiki pages short. 100-300 lines max. If a page grows beyond 300 lines, split it.
-- Use search (`/search/simple/`) to find specific content without reading full pages.
+- Use `wiki-search.py query "<terms>" --top 8 --mode bm25` to find specific content without
+  reading full pages. There is no HTTP search endpoint in this ecosystem: the vault is
+  read by agents and by Git wikis, not by Obsidian plugins.
 
 ---
 
