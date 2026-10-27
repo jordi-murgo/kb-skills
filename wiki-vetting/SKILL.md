@@ -22,11 +22,23 @@ Input: JSON array of `{"claim", "quote", "target_page", "source", "skip_grounded
 
 Each axis has its own threshold because they differ in cost: `sensitive` rejects at 0.30 (over-flagging a secret is cheap, missing one is not), `grounded` demands 0.90. A probability inside `band` of its threshold marks the axis *undecided* and forces `review` — the verdict carries `confidence` and `undecided_axes` so the caller sees how close the call was.
 
-**Measured (2026-10-27, 23 labelled cases, `scripts/calibration.py`):**
-`vllm-sr/d3-turbo` and `pplx-decider:27b-q4_K_M` score **identically** —
-grounded precision 1.00 / recall 0.615, sensitive 1.00 / 1.00 — but d3-turbo takes
-3.6 s against 87 s. Identical verdicts, 24× faster; it is not more accurate, so
-migrate for latency or to avoid running a 27B locally. Both fix the failure below.
+**Measured (2026-10-27, 23 labelled cases, `scripts/calibration.py`):** seven
+decision models tried, and `pplx-decider:27b-q4_K_M` remains the only one that is
+both safe and usable batched.
+
+| model | grounded P / R (batched) | worst unsupported | accepted | 23 cases |
+|---|---|---|---|---|
+| **pplx-decider 27B** | 1.00 / **0.615** | 0.305 | 0/10 | 87 s |
+| clef (cloud only) | 1.00 / 0.154 | 0.381 | 0/10 | **2.5 s** |
+| clef-flash 9B | 0.80 / 0.308 | **0.912** | **2/10** | 42 s |
+| d3 base Q4 | 1.00 / 0.46 (single-claim only) | 0.174 | 0/10 | cannot batch |
+| kev 9B | 1.00 / 0.31 | 0.599 | 0/10 | 26 s |
+| laya 421M | 0.00 / 0.00 | 0.380 | 0/10 | — |
+
+The separating property is not size but **batching**: 16 claims × 4 axes in one
+request degrades every model except the 27B. Small models look fast per claim and
+lose it under the load the skill actually applies. Do not switch to `clef-flash`:
+it accepts 2/10 unsupported claims, one at 0.912 against a 0.90 threshold.
 
 **Measured limit (clef-flash:9b, 23 labelled cases, 2026-10-19):** the `grounded` axis does **not** reliably separate a supporting quote from an adjacent-but-wrong one. Unsupported quotes scored 0.47–0.93; supported ones 0.59–0.96. At 0.90 the false-positive rate is 10% but only 60% of real claims pass. Do not treat `accept` as proof the quote supports the claim; read the probability and the source. Re-run `calibration.py` after any model or prompt change and compare the overlap, not just the aggregate.
 
