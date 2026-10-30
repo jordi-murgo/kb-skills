@@ -481,6 +481,69 @@ def hard_split(body, limit=MAX_CHUNK_CHARS):
     return parts
 
 
+# Bump when the edge-extraction rules change, so an existing index refills the
+# `links` table on the next build instead of staying silently empty.
+LINKS_VERSION = "1"
+
+WIKILINK = re.compile(r"\[\[([^\]|#]+)")
+
+
+def page_key(relpath):
+    """Canonical node id: the file stem, lowercased.
+
+    Obsidian resolves `[[Title]]` by filename, and people also write the page's H1
+    (which often differs in case or wording). `build_resolver` maps both spellings
+    onto this key so they are one node.
+    """
+    return Path(relpath).stem.lower()
+
+
+def link_text_key(text):
+    """Canonical node id for a wikilink target as written."""
+    raw = text.strip()
+    if raw.endswith(".md"):
+        raw = raw[:-3]
+    return Path(raw).name.lower()
+
+
+def build_resolver(pages):
+    """Map every spelling of a page (path, stem, H1 title) onto one node id.
+
+    Without this, `[[equipo-vulcano]]` and the page stored at
+    `wiki/equipo/equipo-vulcano.md` are different strings and every edge dangles.
+    Measured on vulcano-kb before it existed: 1,272 of 1,272 edges dangling.
+    """
+    resolve = {}
+    for relpath, text in pages.items():
+        key = page_key(relpath)
+        resolve[link_text_key(relpath)] = key
+        title = page_title(relpath, text)
+        if title:
+            resolve[link_text_key(title)] = key
+    return resolve
+
+
+def page_links(relpath, text):
+    """Return the distinct page titles this page links to from its body.
+
+    Body links only: frontmatter `relations:` entries are typed edges that the
+    lint gate owns, and counting them again here would double the graph for one
+    relationship. The body link is what a reader clicks, which is why this is the
+    edge set the graph view needs.
+    """
+    # Drop the frontmatter block so `sources: ["[[X]]"]` is not read as a body link.
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            text = text[end + 4 :]
+    seen = []
+    for raw in WIKILINK.findall(text):
+        target = raw.strip()
+        if target and target not in seen:
+            seen.append(target)
+    return seen
+
+
 def chunk_page(relpath, text):
     """Return ordered [(heading, chunk_text)] for one page."""
     title = page_title(relpath, text)
@@ -552,6 +615,16 @@ def ensure_schema(conn):
         " seq INTEGER NOT NULL, text TEXT NOT NULL, embedding BLOB)"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_path ON chunks(path)")
+    # Wikilink edges, body links only. `relations:` frontmatter carries the typed
+    # edges the lint gate validates; these are the untyped ones readers actually
+    # follow, and until now nothing indexed them: 2,263 links in vulcano-kb
+    # produced an empty `graph`.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS links ("
+        " src TEXT NOT NULL, dst TEXT NOT NULL,"
+        " PRIMARY KEY (src, dst)) WITHOUT ROWID"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_links_dst ON links(dst)")
 
 
 def ensure_own_tables(conn):
@@ -582,6 +655,7 @@ def decide_backend(conn):
 def wipe_index(conn, backend):
     conn.execute("DELETE FROM chunks")
     conn.execute("DELETE FROM pages")
+    conn.execute("DELETE FROM links")
     if backend == "fts5":
         try:
             conn.execute("DELETE FROM chunks_fts")
@@ -594,6 +668,9 @@ def wipe_index(conn, backend):
 
 
 def delete_page_chunks(conn, backend, relpath):
+    # Edges are keyed by page_key(), not by path: deleting by path matched
+    # nothing and an edited page kept its stale links forever.
+    conn.execute("DELETE FROM links WHERE src=?", (page_key(relpath),))
     ids = [r[0] for r in conn.execute("SELECT id FROM chunks WHERE path=?", (relpath,))]
     if not ids:
         return
@@ -783,17 +860,54 @@ def cmd_build(args):
         for path, mtime, sha in conn.execute("SELECT path, mtime, sha256 FROM pages")
     }
 
+    # Link extraction arrived after the first indexes were built, so an
+    # incremental build over an existing index would leave every unchanged page
+    # without edges — the graph would report a handful of links over hundreds of
+    # pages. A missing `links_version` means the index predates the `links` table:
+    # re-read every page once (2 s on 344 pages) and record the version.
+    links_version = get_meta(conn, "links_version")
+    backfill = links_version != LINKS_VERSION
+    stats_extra = {"link_backfill": 0}
+
     stats = {"added": 0, "updated": 0, "unchanged": 0, "removed": 0}
+    # Resolve links against every page in scope, not just the changed ones: a link
+    # to an unchanged page resolves by its H1 title, which is only known after
+    # reading that page.
+    page_texts = {
+        relpath: current[relpath].read_text(encoding="utf-8", errors="replace")
+        for relpath in current
+    }
+    resolve = build_resolver(page_texts)
+
     fresh = []  # (chunk_id, chunk_text) needing embeddings
     for relpath in sorted(current):
         f = current[relpath]
         mtime = f.stat().st_mtime
         prev = known.get(relpath)
-        if prev and prev[0] == mtime:
+        if prev and prev[0] == mtime and not backfill:
             stats["unchanged"] += 1
             continue
         raw = f.read_bytes()
         sha = hashlib.sha256(raw).hexdigest()
+        text = raw.decode("utf-8", errors="replace")
+        if backfill and prev:
+            # Edges only: chunks and embeddings are already correct for this page.
+            # This must run before the sha short-circuit, which would otherwise
+            # skip every unchanged page and leave the graph empty.
+            conn.execute("DELETE FROM links WHERE src=?", (page_key(relpath),))
+            conn.executemany(
+                "INSERT OR IGNORE INTO links(src, dst) VALUES (?,?)",
+                [
+                    (page_key(relpath), resolve.get(link_text_key(dst), link_text_key(dst)))
+                    for dst in page_links(relpath, text)
+                ],
+            )
+            stats_extra["link_backfill"] += 1
+            if prev[1] != sha:
+                conn.execute("UPDATE pages SET sha256=? WHERE path=?", (sha, relpath))
+            conn.execute("UPDATE pages SET mtime=? WHERE path=?", (mtime, relpath))
+            stats["unchanged"] += 1
+            continue
         if prev and prev[1] == sha:
             conn.execute("UPDATE pages SET mtime=? WHERE path=?", (mtime, relpath))
             stats["unchanged"] += 1
@@ -803,7 +917,14 @@ def cmd_build(args):
             stats["updated"] += 1
         else:
             stats["added"] += 1
-        text = raw.decode("utf-8", errors="replace")
+        conn.execute("DELETE FROM links WHERE src=?", (page_key(relpath),))
+        conn.executemany(
+            "INSERT OR IGNORE INTO links(src, dst) VALUES (?,?)",
+            [
+                (page_key(relpath), resolve.get(link_text_key(dst), link_text_key(dst)))
+                for dst in page_links(relpath, text)
+            ],
+        )
         for seq, (heading, chunk_text) in enumerate(chunk_page(relpath, text)):
             cur = conn.execute(
                 "INSERT INTO chunks(path, heading, seq, text) VALUES (?,?,?,?)",
@@ -826,6 +947,9 @@ def cmd_build(args):
         delete_page_chunks(conn, backend, relpath)
         conn.execute("DELETE FROM pages WHERE path=?", (relpath,))
         stats["removed"] += 1
+
+    if backfill:
+        set_meta(conn, "links_version", LINKS_VERSION)
 
     embedded, embed_failures = 0, 0
     dims = get_meta(conn, "dims")
@@ -851,6 +975,7 @@ def cmd_build(args):
 
     n_pages = conn.execute("SELECT COUNT(*) FROM pages").fetchone()[0]
     n_chunks = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+    n_links = conn.execute("SELECT COUNT(*) FROM links").fetchone()[0]
     built_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     set_meta(conn, "bm25_backend", backend)
     set_meta(conn, "model", args.model)
@@ -875,6 +1000,8 @@ def cmd_build(args):
         "embed_failures": embed_failures,
         "source_dirs": configured_source_dirs(),
         "quarantined": quarantined,
+        "link_backfill": stats_extra["link_backfill"],
+        "links": n_links,
         "quarantined_count": len(quarantined),
         "model": args.model,
         "bm25_backend": backend,
@@ -890,6 +1017,8 @@ def cmd_build(args):
             f" {stats['unchanged']} unchanged, {stats['removed']} removed),"
             f" {n_chunks} chunks, {embedded} embeddings"
             f"{' (' + str(embed_failures) + ' FAILED)' if embed_failures else ''}"
+            f", {report['links']} links"
+            f"{' (' + str(stats_extra['link_backfill']) + ' pages re-read for links)' if stats_extra['link_backfill'] else ''}"
             f" [model {args.model}, backend {backend}] in {elapsed:.2f}s"
         )
         print(f"db: {DB_PATH} ({db_mb:.2f} MB)")
@@ -1181,6 +1310,69 @@ def evaluate_mode(conn, backend, model, dims, queries, mode, ks):
     return report
 
 
+def cmd_graph(args):
+    """Report the body-wikilink graph: adjacency, one page's neighbourhood, or a
+    list of the most connected pages.
+
+    Edges come from `[[...]]` in page bodies, collected during `build`. Typed
+    `relations:` edges live in frontmatter and are validated by
+    `wiki-lint/scripts/lint-relations.py`; they are deliberately not merged here,
+    because one relationship counted twice would inflate every centrality number.
+    """
+    if not DB_PATH.exists():
+        print(f"error: no index at {DB_PATH}; run 'build' first", file=sys.stderr)
+        return 1
+    conn = connect_readonly()
+    if args.page:
+        rows = conn.execute(
+            "SELECT dst FROM links WHERE src=? UNION SELECT src FROM links WHERE dst=?",
+            (args.page, args.page),
+        ).fetchall()
+        neighbours = sorted({r[0] for r in rows})
+        if not neighbours:
+            known = conn.execute(
+                "SELECT 1 FROM links WHERE src=? OR dst=? LIMIT 1", (args.page, args.page)
+            ).fetchone()
+            if not known:
+                print(
+                    f"warning: '{args.page}' has no indexed links; pass a page PATH "
+                    "(as stored by build), e.g. wiki/entities/foo.md",
+                    file=sys.stderr,
+                )
+        out = {"page": args.page, "neighbours": neighbours, "degree": len(neighbours)}
+    else:
+        rows = conn.execute(
+            "SELECT node, COUNT(*) AS degree FROM ("
+            "  SELECT src AS node FROM links UNION ALL SELECT dst FROM links"
+            ") GROUP BY node ORDER BY degree DESC, node LIMIT ?",
+            (args.top,),
+        ).fetchall()
+        total = conn.execute("SELECT COUNT(*) FROM links").fetchone()[0]
+        known_keys = {page_key(r[0]) for r in conn.execute("SELECT path FROM pages")}
+        dangling = sum(
+            1 for (dst,) in conn.execute("SELECT DISTINCT dst FROM links")
+            if dst not in known_keys
+        )
+        out = {
+            "edges": total,
+            "pages": conn.execute("SELECT COUNT(*) FROM pages").fetchone()[0],
+            "dangling_targets": dangling,
+            "top": [{"page": r[0], "degree": r[1]} for r in rows],
+        }
+    if args.json:
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+    elif args.page:
+        print(f"{out['page']}  ({out['degree']} linked pages)")
+        for n in out["neighbours"]:
+            print(f"  {n}")
+    else:
+        print(f"{out['edges']} edges over {out['pages']} pages"
+              f" ({out['dangling_targets']} dangling targets)")
+        for row in out["top"]:
+            print(f"  {row['degree']:4}  {row['page']}")
+    return 0
+
+
 def cmd_eval(args):
     if not DB_PATH.exists():
         print(f"error: no index at {DB_PATH}; run 'build' first", file=sys.stderr)
@@ -1368,6 +1560,11 @@ def parse_args(argv):
     s = sub.add_parser("status", help="index stats and stale pages")
     s.add_argument("--json", action="store_true", help="JSON status")
 
+    g = sub.add_parser("graph", help="body-wikilink graph: edges, hubs, one page's neighbours")
+    g.add_argument("page", nargs="?", help="page path as stored by build (omit for the hub list)")
+    g.add_argument("--top", type=int, default=10, help="hubs to list (default %(default)s)")
+    g.add_argument("--json", action="store_true", help="JSON output")
+
     e = sub.add_parser("eval", help="score retrieval against a human-authored gold query set")
     e.add_argument("dataset", help="gold set JSON: {name, queries: [{id, text, relevant: [page paths], category}]}")
     e.add_argument("--mode", action="append", choices=("hybrid", "bm25", "vector"),
@@ -1400,6 +1597,8 @@ def main(argv=None):
         return cmd_build(args)
     if args.cmd == "query":
         return cmd_query(args)
+    if args.cmd == "graph":
+        return cmd_graph(args)
     if args.cmd == "eval":
         return cmd_eval(args)
     return cmd_status(args)

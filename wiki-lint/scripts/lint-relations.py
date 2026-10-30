@@ -16,7 +16,14 @@ Canonical types and their inverses:
     contradicts <-> contradicted_by
 
 Pages are identified by [[wikilink title]] (the page's `title` frontmatter,
-falling back to filename stem). Graph queries (beyond lint):
+falling back to filename stem).
+
+This gate reads ONLY the typed `relations:` block above. The untyped graph a
+reader follows — `[[...]]` in page bodies — is indexed by `wiki-search build` and
+queried with `wiki-search graph [PAGE]`. They are separate on purpose: one
+relationship counted in both places would double every centrality number.
+
+Graph queries here (typed edges only):
     graph [PAGE]       adjacency list (all, or one page's neighborhood)
     reverse PAGE       what points at PAGE (typed backlinks)
 

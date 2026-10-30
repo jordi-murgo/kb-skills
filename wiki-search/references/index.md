@@ -9,7 +9,21 @@ python3 .agents/skills/wiki-search/scripts/wiki-search.py build                 
 python3 .agents/skills/wiki-search/scripts/wiki-search.py status                 # counts, staleness, backend
 python3 .agents/skills/wiki-search/scripts/wiki-search.py query "TEXT" [--top 8] [--mode hybrid|bm25|vector] [--json]
 python3 .agents/skills/wiki-search/scripts/wiki-search.py eval GOLD.json [--mode M]... [--k 1,3,5,10] [--json] [--per-query]
+python3 .agents/skills/wiki-search/scripts/wiki-search.py graph [PAGE] [--top 10] [--json]
 ```
+
+`graph` reports the **body-wikilink graph**: `[[...]]` links in page text, collected
+during `build` into a `links(src, dst)` table. With no argument it lists total
+edges, page count, dangling targets and the highest-degree pages; with a page stem
+it lists that page's neighbours in both directions.
+
+Two edge sets exist and are deliberately separate. `relations:` in frontmatter
+carries **typed** edges (`uses`, `extends`, `contradicts`…) validated by
+`wiki-lint/scripts/lint-relations.py`; body wikilinks are the **untyped** links a
+reader clicks. Merging them would count one relationship twice and inflate every
+centrality number. Measured on vulcano-kb after the change: **1,188 edges over 330
+pages, 16 dangling targets** — before it existed the same vault reported `{}`,
+because only frontmatter was read and no page used `relations:`.
 
 Add `--json` to `build` or `status` for machine-readable reports. `query` fails with "no index … run 'build' first" rather than building automatically; `status` is the actual staleness check and reports pages/chunks/embedded/model/dims/backend/source_dirs/last_build/stale/new.
 
