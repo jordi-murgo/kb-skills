@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Survey wiki pages in a directory or glob.
 
-Extracts frontmatter (type, title, status, tags, created, updated) and the
-first heading + first callout/insight from each .md file. Output is compact
-and tabular, designed for quick comparison when evaluating merges, dedup,
-or index improvements.
+Extracts frontmatter (`type`, `maturity`, `verification`, decision state, tags,
+dates) plus the first heading and insight. Output is compact for merge,
+deduplication, and consolidation review.
 
 Usage:
     python3 wiki-survey.py [path_or_glob ...]
@@ -15,7 +14,7 @@ Excludes .reciclaje/ and meta pages (index, log, hot) by default.
 
 Flags:
     --all          include meta pages and .reciclaje
-    --fields f1,f2 limit fields shown (default: type,status,tags,updated)
+    --fields f1,f2 limit fields shown (default: type,maturity,verification,tags,updated)
     --no-callout   suppress first callout/insight line
     --json         machine-readable output
 """
@@ -50,7 +49,7 @@ def find_wiki_root(start: str = ".") -> str:
 
 
 META_PAGES = {"index", "log", "hot"}
-ALL_FIELDS = ["type", "title", "status", "tags", "created", "updated"]
+ALL_FIELDS = ["type", "title", "maturity", "verification", "decision_status", "tags", "created", "updated"]
 
 
 def parse_frontmatter(content: str) -> dict:
@@ -183,7 +182,9 @@ def survey_file(filepath: str, wiki_root: str) -> dict:
         "slug": Path(filepath).stem,
         "type": fm.get("type", ""),
         "title": fm.get("title", ""),
-        "status": fm.get("status", ""),
+        "maturity": fm.get("maturity", ""),
+        "verification": fm.get("verification", ""),
+        "decision_status": fm.get("decision_status", ""),
         "tags": format_tags(fm.get("tags", "")),
         "created": fm.get("created", ""),
         "updated": fm.get("updated", ""),
@@ -229,8 +230,8 @@ def main():
     parser = argparse.ArgumentParser(description="Survey wiki pages for dedup/merge analysis")
     parser.add_argument("paths", nargs="*", help="directories or glob patterns (default: all wiki)")
     parser.add_argument("--all", action="store_true", help="include meta pages and .reciclaje")
-    parser.add_argument("--fields", default="type,status,tags,updated",
-                        help="comma-separated fields to show (default: type,status,tags,updated)")
+    parser.add_argument("--fields", default="type,maturity,verification,tags,updated",
+                        help="comma-separated fields to show (default: type,maturity,verification,tags,updated)")
     parser.add_argument("--no-callout", action="store_true", help="suppress first callout/insight")
     parser.add_argument("--json", action="store_true", help="machine-readable JSON output")
     args = parser.parse_args()

@@ -1,14 +1,14 @@
 ---
 name: wiki-ingest
-description: "Ingest sources into the wiki vault. Reads a source, extracts entities and concepts, creates or updates wiki pages, cross-references, and logs the operation. Supports files, URLs, and batch mode. Optional `review` flag adds a pre-ingest human-in-the-loop gate that flags doubtful URL content (ads, nav, off-topic) with annotated recommendations before writing to .raw/. After writing, runs a semantic verification pass (wiki-search retrieval + System One judgment) that flags contradictions, duplicates and missing cross-references against existing pages. Triggers on: ingest, process this source, add this to the wiki, read and file this, batch ingest, ingest all of these, ingest this url."
+description: "Ingest files, URLs, images, or batches into a wiki vault through an observation-first knowledge flow. Extracts cited atomic claims, compares them with canonical and recent knowledge, records provisional observations/candidates, and writes wiki pages only for durable non-duplicate outcomes. Optional `review` flags doubtful URL content before `.raw/` is written. Triggers on: ingest, process this source, add this to the wiki, read and file this, batch ingest, ingest all of these, ingest this url."
 argument-hint: "[file-or-url] [review] [force] Not for converting .docx/.pdf/.pptx sources (use `doc-pipeline`) or saving the current conversation (use `save`)."
 ---
 
-# wiki-ingest: Source Ingestion
+# wiki-ingest: Observation-First Source Ingestion
 
-Read the source. Write the wiki. Cross-reference everything. A single source typically touches 8-15 wiki pages.
+Read the source, record sourced observations immediately, then consolidate only what changes durable knowledge. The default result may be zero new pages.
 
-**Syntax standard**: Write all wiki pages using the wiki markdown conventions. Wikilinks as `[[Note Name]]`, callouts as `> [!type] Title`, embeds as `![[file]]`, properties as YAML frontmatter. See the wiki-markdown skill for syntax reference.
+**Syntax standard**: Write canonical wiki pages with the wiki-markdown conventions. Read [`references/knowledge-flow.md`](references/knowledge-flow.md) before every ingest; it defines observation/candidate schemas, deterministic IDs, routing actions, and the no-page default.
 
 ---
 
@@ -28,8 +28,10 @@ Before ingesting any file, check `.raw/.manifest.json` to avoid re-processing un
     ".raw/articles/article-slug-2026-04-08.md": {
       "hash": "abc123",
       "ingested_at": "2026-04-08",
-      "pages_created": ["wiki/sources/article-slug.md", "wiki/entities/Person.md"],
-      "pages_updated": ["wiki/index.md"]
+      "observation_ids": ["obs-0123456789abcdef"],
+      "candidate_ids": ["cand-0123456789abcdef"],
+      "pages_created": [],
+      "pages_updated": ["wiki/concepts/existing-topic.md"]
     }
   }
 }
@@ -45,8 +47,8 @@ Before ingesting any file, check `.raw/.manifest.json` to avoid re-processing un
 4. If missing or hash differs, proceed with ingest.
 
 **After ingesting a file:**
-1. Record `{hash, ingested_at, pages_created, pages_updated}` in `.manifest.json`.
-2. Write the updated manifest back.
+1. Record `{hash, ingested_at, observation_ids, candidate_ids, pages_created, pages_updated}` in `.manifest.json`.
+2. Write the updated manifest back. Empty page arrays are valid and expected for duplicate or recent-only input.
 
 Skip delta checking if the user says "force ingest" or "re-ingest".
 
@@ -84,7 +86,7 @@ Steps:
    ---
    ```
    > `.raw/` is immutable once written. The `review` gate operates on a working copy in `$TMPDIR`; the file that lands in `.raw/` is the final, user-approved version. Because the project hook blocks `Write`/`Edit` under `.raw/`, write the final file with a Bash heredoc/`mv`, not the Write tool.
-5. Proceed with **Single Source Ingest** starting at step 2 (file is now in `.raw/`).
+5. Proceed with **Single Source Ingest** from step 1 (the source is now in `.raw/`).
 
 ---
 
@@ -136,27 +138,22 @@ Trigger: user drops a file into `.raw/` or pastes content.
 
 Steps:
 
-1. **Read** the source completely. Do not skim.
-2. **Discuss** key takeaways with the user. Ask: "What should I emphasize? How granular?" Skip this if the user says "just ingest it."
-3. **Create** source summary in `wiki/sources/`. Use the source frontmatter schema from the `wiki-markdown` skill (frontmatter section). If DragonScale addresses are enabled, assign one per `references/opt-in-features.md` (§ Address Assignment).
-4. **Create or update** entity pages for every person, org, product, and repo mentioned. One page per entity.
-5. **Create or update** concept pages for significant ideas and frameworks.
-6. **Detect native-language term candidates** only if the vault opted in (see `references/opt-in-features.md` § Bilingual Term Detection). Classify and propose termbase additions before writing.
-7. **Update** relevant domain page(s) and their `_index.md` sub-indexes.
-8. **Update** `wiki/overview.md` if the big picture changed.
-9. **Update** `wiki/index.md`. Add entries for all new pages.
-10. **Update** `wiki/hot.md` with this ingest's context.
-11. **Append** to `wiki/log.md` (new entries at the TOP):
-    ```markdown
-    ## [YYYY-MM-DD] ingest | Source Title
-    - Source: `.raw/articles/filename.md`
-    - Summary: [[Source Title]]
-    - Pages created: [[Page 1]], [[Page 2]]
-    - Pages updated: [[Page 3]], [[Page 4]]
-    - Key insight: One sentence on what is new.
-    ```
-12. **Verify semantically.** Run the *Post-Creation Verification* pass below: search each new claim against the rest of the vault (wiki-search) and flag conflicts with `> [!contradiction]` callouts on both pages.
-13. **Refresh** `wiki/dashboard.md` from `wiki/goals.md` and the changed evidence before reporting completion; preserve manual notes and existing goal rows, no invented objectives or progress.
+1. **Read** the source completely. Do not skim. Compute/confirm its SHA-256 and manifest state.
+2. **Discuss** emphasis and granularity unless the user said "just ingest it". This changes selection, never provenance requirements.
+3. **Extract observations before writing pages.** Read `references/knowledge-flow.md`; produce atomic claims with verbatim quotes, exact source lines, event/validity time, and deterministic IDs. Append only new records to `.cache/knowledge-flow/observations.jsonl`.
+4. **Retrieve before deciding.** Search each observation against both canonical and recent knowledge with `wiki-search.py query "<claim>" --scope all --top 8 --mode hybrid --json`. Read actual matched pages; snippets are discovery, not evidence.
+5. **Vet and route.** Use `wiki-vetting` signals plus the retrieved evidence to write one candidate record with `relation`, `durability`, `action`, and reason. The action table in `references/knowledge-flow.md` is authoritative.
+6. **Apply only the candidate action:**
+   - `no_op`, `recent_only`, `reject` → no canonical write;
+   - `add_evidence` → add the new citation to the existing claim without restating it;
+   - `update_existing` → edit the page that already owns the subject;
+   - `hold_dispute` → add a precise contradiction marker without choosing a winner;
+   - `promote` → prefer an existing page; create a page only when no current page can own durable knowledge.
+7. **Create optional supporting pages sparingly.** Create a source page only for a reusable artifact (standard, paper, ADR, contract, design, dataset, or reference). Create entity/concept pages only when they own standalone durable knowledge; a mention never qualifies.
+8. **Apply opt-ins** only when enabled: bilingual term detection and DragonScale address assignment remain governed by `references/opt-in-features.md`.
+9. **Finish candidate state.** Append its final `status` after successful application; never rewrite ledger history.
+10. **Maintain canonical navigation once per changed batch.** Only when wiki pages changed: update affected domain/index pages, `wiki/overview.md` if the big picture changed, `wiki/index.md`, `wiki/hot.md`, one top `wiki/log.md` entry, and `wiki/dashboard.md`. Do not mutate these for observation-only/no-op ingests.
+11. **Record the manifest** with observation IDs, candidate IDs, and exact created/updated page arrays. Report counts by action, including zero canonical writes.
 
 ---
 
@@ -166,75 +163,52 @@ Trigger: user drops multiple files or says "ingest all of these."
 
 Steps:
 
-1. List all files to process. Confirm with user before starting.
-2. Process each source following the single ingest flow. Defer cross-referencing between sources until step 3.
-3. After all sources: do a cross-reference pass. Run the *Post-Creation Verification* pass below (claims from all new/updated pages at once), then look for connections between the newly ingested sources.
-4. Update index, hot cache, log, and `wiki/dashboard.md` once per changed batch at the end (not per-source), then report once.
-5. Report: "Processed N sources. Created X pages, updated Y pages. Here are the key connections I found."
+1. List files and confirm the batch unless the user already named the complete set.
+2. Extract and record all observations source by source; preserve each source's own hash, lines, and time.
+3. Retrieve/classify related observations together so two files supporting one claim become `corroborates`, not two pages.
+4. Apply candidate actions once per canonical subject. Then maintain index, log, hot, overview, and dashboard once for the changed batch.
+5. Report sources, observations, candidates by action, pages created/updated, disputes held, and recent-only items.
 
-Batch ingest is less interactive. For 30+ sources, expect significant processing time. Check in with the user after every 10 sources.
+For 30+ sources, checkpoint every 10 sources. Never parallelize canonical writes or address allocation.
 
 ---
 
 ## Context Window Discipline
 
-Token budget matters. Follow these rules during ingest:
-
-- Read `wiki/hot.md` first. If it contains the relevant context, don't re-read full pages.
-- Read `wiki/index.md` to find existing pages before creating new ones.
-- Read only 3-5 existing pages per ingest. If you need 10+, you are reading too broadly.
-- Use PATCH for surgical edits. Never re-read an entire file just to update one field.
-- Keep wiki pages short. 100-300 lines max. If a page grows beyond 300 lines, split it.
-- Use `wiki-search.py query "<terms>" --top 8 --mode bm25` to find specific content without
-  reading full pages. There is no HTTP search endpoint in this ecosystem: the vault is
-  read by agents and by Git wikis, not by Obsidian plugins.
+- Read `wiki/hot.md` and `wiki/index.md` for orientation, then use `wiki-search --scope all` for discovery.
+- Read the matched evidence needed to classify; do not impose an arbitrary page cap that forces guesses.
+- Use surgical edits for canonical updates. Never re-read an entire page only to change one field.
+- Keep wiki pages focused. Split pages over 300 lines only when the subjects are independently useful.
+- Search does not prove a match: read the returned page/heading and compare claim, scope, date, and provenance.
 
 ---
 
 ## Contradictions
 
-> [!note] Custom callout dependency
-> The `[!contradiction]` callout type is a wiki convention. See the wiki-markdown skill for the custom callout types (contradiction, gap, key-insight, stale).
+Resolve apparent conflicts by date, validity interval, and scope before calling them contradictions. If still incompatible, use `hold_dispute`: keep the candidate pending and add this to the owning canonical page:
 
-When new info contradicts an existing wiki page:
-
-On the existing page, add:
 ```markdown
-> [!contradiction] Conflict with [[New Source]]
-> [[Existing Page]] claims X. [[New Source]] says Y.
-> Needs resolution. Check dates, context, and primary sources.
+> [!contradiction] Held candidate cand-0123456789abcdef
+> Canonical claim X conflicts with observed claim Y. Evidence: ^[.raw/articles/filename.md:42-58].
+> Unresolved; compare dates, scope, and primary sources before promotion.
 ```
 
-On the new source summary, reference it:
-```markdown
-> [!contradiction] Contradicts [[Existing Page]]
-> This source says Y, but existing wiki says X. See [[Existing Page]] for details.
-```
-
-Do not silently overwrite old claims. Flag and let the user decide.
+Never create a second page merely to host the conflicting claim. Never silently overwrite either claim. `wiki-vetting` lifecycle audit exposes contradiction callouts as the dispute queue.
 
 ---
 
-## Post-Creation Verification (semantic)
+## Pre-write Comparison
 
-After pages are written (single-source step 12, or the batch cross-reference pass), verify the new content against the rest of the vault with retrieval, not memory. This is the judgment layer on top of the deterministic lint gates: verdicts land in the existing conventions (contradiction callouts, typed relations, cross-links), which `wiki-lint` then enforces.
+Every candidate is compared before any canonical write:
 
-Procedure:
+1. Refresh the canonical index only when explicit index maintenance is warranted; ordinary ingest does not hide a stale/missing index by silently rebuilding it.
+2. Search the atomic claim with `--scope all`; drop the observation itself when comparing recent hits.
+3. Read matched canonical text and recent provenance. Classify `duplicate`, `corroborates`, `extends`, `contradicts`, or `novel`.
+4. Use `wiki-vetting` to reject sensitive/ungrounded input and distinguish durable from ephemeral input. Read probabilities and undecided axes; a model label is not evidence.
+5. Record the candidate before applying `no_op`, `add_evidence`, `update_existing`, `hold_dispute`, `promote`, `recent_only`, or `reject`.
+6. After a write, verify the exact changed page carries the source citation and represents the candidate action. Do not run a second semantic round over prose the ingest just generated.
 
-1. **Refresh the index** — the pass is only as good as the index: `python3 .agents/skills/wiki-search/scripts/wiki-search.py build` (incremental, sub-second on small vaults). This is the one point where wiki-ingest triggers a build: the verification reads the index, so it must be current.
-2. **Extract claims** from each page this ingest created or updated: atomic factual assertions, each with a verbatim quote from the page (wiki-vetting extraction pattern). Skip navigation text, frontmatter and passages the ingest did not write.
-3. **Search per claim**: `wiki-search.py query "<claim>" --top 8 --mode hybrid --json`. Drop hits from the page itself and from `wiki/meta/**`.
-4. **Judge the pairs**: for each (claim, hit) pair with real topical overlap, classify via the wiki-vetting System One contract: `contradicts` / `duplicates` / `extends` / `distinct`. Hard rules from wiki-vetting apply: `questions` is a record keyed by id; each instruction names the claim and quotes the evidence chunk; ≤16 claims per request; states ≤6k tokens (iGPU prefill ~1.4 s per 1k tokens).
-5. **Apply verdicts** (in the ingest session, not in a read-only subagent):
-   - `contradicts` → add the `[!contradiction]` callouts on both pages (see Contradictions above) plus a typed relation `contradicts` in frontmatter. Never silently overwrite the old claim.
-   - `duplicates` → merge into the stronger page and redirect links, or record why both stay. An ingest that created a duplicate means the pre-creation duplicate check missed; treat it as a defect, not a nuance.
-   - `extends` → add the missing wikilink so the pages reference each other.
-   - `distinct` → nothing to do.
-6. **Report** verdicts with the search evidence. Unresolved contradictions stay flagged — the lint gates keep failing until resolved, and that is intended.
-
-Steps 2–4 are read-only and MAY be dispatched to a review subagent; subagents MUST NOT call the address allocator or write pages (see `references/opt-in-features.md` § Address Assignment). Verdict application (step 5) happens in the main ingest session.
-
-Budget guardrails: verify only pages this ingest created or updated — never the whole vault; extract only claims that assert something (typically 3–8 per page); one round only, no re-verification of pages you just edited.
+This ordering makes duplicate creation a prevented write, not a post-creation cleanup task.
 
 ---
 
@@ -253,7 +227,8 @@ Cite the source for each sourced claim inline, so `wiki-lint` (`lint-citations.p
 
 ## What Not to Do
 
-- **Source files under `.raw/` are immutable.** Do not modify the files that users drop there (articles, transcripts, images). The `.raw/.manifest.json` delta tracker and its `address_map` (DragonScale Mechanism 2) are the only files under `.raw/` that `wiki-ingest` itself maintains. Treat every other file under `.raw/` as read-only source content.
-- Do not create duplicate pages. Always check the index and search before creating.
-- Do not skip the log entry for changed or new ingest content. Every changed/new ingest must be recorded.
-- Do not skip the hot cache update. It is what keeps future sessions fast.
+- **Source files under `.raw/` are immutable.** Do not modify user-provided sources. The manifest and deliberate acquirer outputs are the only maintained `.raw/` state.
+- Do not create a source page, entity page, or concept page by default. Promotion requires a durable owner and no stronger existing page.
+- Do not treat recent observations as canonical. Search may return them, always labelled provisional.
+- Do not update index, log, hot, overview, or dashboard for a no-op/recent-only/rejected ingest.
+- Do not skip the manifest or derived ledgers; without provenance, recent information cannot be trusted or reconstructed.

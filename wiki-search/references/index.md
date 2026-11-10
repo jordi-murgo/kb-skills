@@ -7,15 +7,36 @@ Fully local: BM25 via SQLite FTS5 (own inverted index as fallback), embeddings v
 ```bash
 python3 .agents/skills/wiki-search/scripts/wiki-search.py build                  # incremental: configured source dirs
 python3 .agents/skills/wiki-search/scripts/wiki-search.py status                 # counts, staleness, backend
-python3 .agents/skills/wiki-search/scripts/wiki-search.py query "TEXT" [--top 8] [--mode hybrid|bm25|vector] [--json]
+python3 .agents/skills/wiki-search/scripts/wiki-search.py query "TEXT" [--scope canonical|recent|all] [--top 8] [--mode hybrid|bm25|vector] [--json]
 python3 .agents/skills/wiki-search/scripts/wiki-search.py eval GOLD.json [--mode M]... [--k 1,3,5,10] [--json] [--per-query]
 python3 .agents/skills/wiki-search/scripts/wiki-search.py graph [PAGE] [--top 10] [--json]
+python3 .agents/skills/wiki-search/scripts/wiki-search.py graph --html [PATH] [--max-nodes 1500]
 ```
 
 `graph` reports the **body-wikilink graph**: `[[...]]` links in page text, collected
 during `build` into a `links(src, dst)` table. With no argument it lists total
 edges, page count, dangling targets and the highest-degree pages; with a page stem
 it lists that page's neighbours in both directions.
+
+`graph --html` writes one self-contained file (no CDN, no build step, opens offline)
+and prints the path. It defaults to `.cache/wiki-graph.html`; a relative `PATH` is
+resolved against the vault root and an absolute one is taken as given. Node ids are
+page stems, so `wiki/x/bi2614-1.md` and `.raw/jira/BI2614-1.md` are one node and the
+header reports `N indexed files → M nodes` when they differ. Isolated pages and
+dangling link targets are nodes too — the first version built its node list from
+the edge list and silently rendered 229 of 421 files. `--max-nodes` truncates by
+degree only when the graph is too large for a browser, and says so on the page.
+
+The view is `scripts/graph-view.html`, read at generation time and inlined into the
+output. It is deliberately not a Python string literal: 900 lines of CSS and JS in
+a literal is unreadable and one stray quote breaks the module.
+
+In the page: drag the canvas to pan, drag a node to pin it (double-click it or the
+canvas to unpin and re-fit), wheel to zoom, click a node to open the inspector with
+its outgoing/incoming links and a 1- or 2-hop focus, `/` to search with keyboard
+navigation, the type legend to show or hide page types, and the toolbar to fit,
+re-layout, pause the simulation or export a PNG. A selected node is addressable as
+`#<node-id>`. Every node links to its Markdown file relative to the output path.
 
 Two edge sets exist and are deliberately separate. `relations:` in frontmatter
 carries **typed** edges (`uses`, `extends`, `contradicts`…) validated by
@@ -25,7 +46,7 @@ centrality number. Measured on vulcano-kb after the change: **1,188 edges over 3
 pages, 16 dangling targets** — before it existed the same vault reported `{}`,
 because only frontmatter was read and no page used `relations:`.
 
-Add `--json` to `build` or `status` for machine-readable reports. `query` fails with "no index … run 'build' first" rather than building automatically; `status` is the actual staleness check and reports pages/chunks/embedded/model/dims/backend/source_dirs/last_build/stale/new.
+`query --scope canonical` fails with "no index … run 'build' first" rather than building automatically. `--scope recent` needs no index; `--scope all` reports canonical unavailability and still returns provisional observations. `status` is the canonical staleness check.
 
 ## Index maintenance
 
@@ -41,22 +62,33 @@ Changing the configured `db` path requires an explicit edit to kb-config.yaml; t
 
 Without config: `bge-m3` at `http://127.0.0.1:11434`, index at `.cache/wiki-search/index.db` — disposable derived cache, delete and rebuild anytime (~6 s for a 35-page vault; a full rebuild also happens automatically when the model changes). `WIKI_SEM_NO_FTS5=1` forces the fallback inverted index. `vector` mode needs the embedding endpoint up; `bm25` works offline.
 
+
+## Query scopes
+
+| Scope | Source | Ranking | Contract |
+|---|---|---|---|
+| `canonical` (default) | indexed configured Markdown | BM25/vector/hybrid | Consolidated knowledge only |
+| `recent` | `.cache/knowledge-flow/observations.jsonl` plus candidate state | in-memory BM25 | Provisional, immediate, no build |
+| `all` | both | separate rankings | Two blocks; never fuse epistemic layers |
+
+Recent search keeps observations whose latest epistemic state is `observed`, validity has not expired, and latest candidate is not terminally rejected/expired or already applied to canonical knowledge. Applied `hold_dispute` candidates remain visible because the conflict is unresolved. Missing candidate state appears as `unclassified`. JSONL corruption fails loudly with the exact file and line.
+
+The default remains `canonical` for CLI compatibility. Agents answering freshness-sensitive questions and `wiki-ingest` comparing new claims use `--scope all`. A recent hit is a pointer to source evidence, not proof: read `source_path` + `source_lines` before answering.
+
 ## Output trust
 
-An answer or summary an agent files back into the wiki is a claim, not knowledge. With a `trust` section in kb-config.yaml, pages of the listed types stay out of the index until their `status:` says they were checked:
+Self-authored output is not supported knowledge until checked. Gate listed page types by `verification`, independently from `maturity`:
 
 ```yaml
 trust:
-  output_types: [question, summary]   # types whose pages are gated
-  indexed_status: [verified]          # statuses that earn indexing (default)
-  require_evidence: false             # `verified` also needs `evidence:` (default false)
+  output_types: [question, summary]
+  indexed_verification: [supported]
+  require_evidence: false
 ```
 
-Only the listed types are gated — a `concept` in `draft` is still indexed, because the gate is about self-authored output re-entering the retrieval corpus, not about every page's maturity. Matching is case-insensitive; a page with no `status:` is quarantined and reported as `(no status)`. Without the section nothing is gated, which is the pre-trust behavior every existing vault depends on.
+Only listed types are gated. Matching is case-insensitive; missing `verification:` is reported as `(no verification)`. Without `trust`, nothing is gated. With `require_evidence: true`, a qualifying page without a populated `evidence:` scalar/list is held as `supported without evidence`.
 
-With `require_evidence: true`, a page whose status is in `indexed_status` but has no `evidence:` is held and reported as `verified without evidence`. Both frontmatter shapes count — a scalar and a populated list — while a bare `evidence:` with nothing under it does not. Turn it on only after the vault adopted the field: `wiki-vetting`'s lifecycle audit reports `verified` pages missing evidence, so run that first.
-
-`build` and `status` both report quarantine (`quarantined_count` plus one `{page, status}` per held page). In `status`, a page that left the index because of quarantine is reported as `reason: quarantined`, not `deleted` — the distinction matters: one is a promotion away from returning, the other needs re-ingesting.
+`build` and `status` report quarantine as `{page, verification}`. A page removed from the index by this gate is `quarantined`, not `deleted`.
 
 ## Query semantics
 

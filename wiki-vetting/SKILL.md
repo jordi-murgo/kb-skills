@@ -1,6 +1,6 @@
 ---
 name: wiki-vetting
-description: "Score atomic claims before they enter the vault (grounded/durable/duplicate/sensitive) with a System One decision model, and audit vault lifecycle: missing status, disputes, verified pages without evidence. Triggers on: vet these claims, should this go in the wiki, audit statuses, lifecycle audit, dispute queue."
+description: "Score atomic claims before canonical knowledge, emit explicit routing actions, and audit independent maturity, verification, decision lifecycle, disputes, and evidence. Triggers on: vet these claims, should this go in the wiki, route candidate, audit verification, lifecycle audit, dispute queue."
 argument-hint: "--claims claims.json | audit"
 ---
 
@@ -16,7 +16,7 @@ python3 .agents/skills/wiki-vetting/scripts/calibration.py --set .agents/skills/
 python3 .agents/skills/wiki-vetting/scripts/wiki-lifecycle.py [--json]
 ```
 
-Input: JSON array of `{"claim", "quote", "target_page", "source", "skip_grounded"}`. Verdicts: `accept` (write it), `reject` (ungrounded or sensitive — drop or sanitize and re-vet), `review` (human decides, or an axis landed inside its uncertainty band). Config in kb-config.yaml `decisions`: `model` (default `clef-flash:9b`), `endpoint` (server base URL; `/v1/systemone` appended) and `thresholds` (per-axis cuts plus `band`). `${VAR}` macros expand from the environment incl. vault-root `.env`/`.env.local` (`.env.example`). CLI flags beat config.
+Input: JSON array of `{"claim", "quote", "target_page", "source", "skip_grounded"}`. Every result retains the compatibility verdict (`accept|review|reject`) and adds an operational `action`: `reject_sensitive`, `reject_ungrounded`, `recent_only`, `merge_or_noop`, `promote_candidate`, or `human_review`. Config in kb-config.yaml `decisions`: `model`, `endpoint`, per-axis `thresholds`, and uncertainty `band`. `${VAR}` macros expand from the environment; CLI flags beat config.
 
 ## Thresholds are a dial, not a fix
 
@@ -44,10 +44,10 @@ it accepts 2/10 unsupported claims, one at 0.912 against a 0.90 threshold.
 
 ## Workflow
 
-1. Extract atomic claims, each with a verbatim quote that proves it.
-2. Vet; read the probabilities and `undecided_axes`, not just the verdicts.
-3. `accept` → write with `status: verified` and `evidence:` in frontmatter. `review` → `status: developing` or hold.
-4. `reject` (sensitive) → never enters the vault; strip the secret, re-vet.
+1. Extract atomic claims, each with a verbatim supporting quote. Event claims may use `skip_grounded` plus `source`.
+2. Vet; read probabilities, `undecided_axes`, and `action`, not just the coarse verdict.
+3. Route: sensitive/ungrounded → reject; ephemeral → recent ledger only; duplicate → compare for corroboration versus no-op; novel durable → candidate promotion; undecided → human review.
+4. The action is not proof. Read source and retrieved canonical evidence before `wiki-ingest` chooses `add_evidence`, `update_existing`, `hold_dispute`, `promote`, or `no_op`.
 
 ## Hard-won contract details (do not "fix" these)
 
@@ -58,8 +58,8 @@ it accepts 2/10 unsupported claims, one at 0.912 against a 0.90 threshold.
 
 ## Lifecycle audit
 
-Reports content pages missing `status`, the dispute queue (`status: disputed` or `> [!contradiction]` callouts with file:line), and `status: verified` pages missing `evidence`. Run after batch ingests; fix the top of the list with real statuses, not bulk-stamping.
+Reports pages missing `maturity` or `verification`, decisions missing `decision_status`, the dispute queue (`verification: disputed` or contradiction callouts), and `verification: supported` pages missing `evidence`. Fix with actual review; never bulk-stamp.
 
 ## Answer filing is a separate gate
 
-This skill guards the *inbound* path: a source becomes claims, claims become pages. It does not guard an answer an agent files back into the wiki, which never passed through claim extraction. That path is gated at retrieval time instead: configure `trust.output_types` in kb-config.yaml and `wiki-search` keeps pages of those types out of the index until `status:` says they were checked (see `wiki-search/references/index.md` § Output trust). Use this skill's lifecycle audit to see which filed pages still lack evidence; use the trust gate to keep them out of search until they have it.
+Inbound source claims use this skill. Self-authored answers did not pass claim extraction, so `wiki-search` gates configured output types by `verification` at retrieval time. `maturity` never bypasses evidence review.

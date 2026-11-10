@@ -40,7 +40,7 @@ from pathlib import Path
 MACRO_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 # Always exempt: derived/navigation areas and archive
-GLOBAL_EXEMPT_FOLDERS = {"meta", ".reciclaje"}
+GLOBAL_EXEMPT_FOLDERS = {"meta", ".reciclaje", "_templates"}
 GLOBAL_EXEMPT_BASENAMES = {"index.md", "hot.md", "log.md", "goals.md", "dashboard.md", "overview.md"}
 
 

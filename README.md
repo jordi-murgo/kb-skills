@@ -19,11 +19,13 @@ kb-skills/
 ├── wiki-lint/               ← health check + deterministic gates
 │   └── scripts/             ← run-lint.py aggregator + ten lint-*.py checks
 ├── wiki-fold/  wiki-issues/  wiki-markdown/
-├── wiki-search/             ← wiki Q&A + hybrid BM25+vector vault search
+├── wiki-search/             ← canonical + immediate recent retrieval
 │   └── scripts/             ← wiki-search.py; data in .cache/wiki-search/
+├── wiki-consolidate/        ← promote/merge/dispute/expire candidates
+│   └── scripts/             ← consolidate.py; ledgers in .cache/knowledge-flow/
 ├── code-search/             ← self-contained lexical/vector source search
 │   └── scripts/             ← code-search.py; data in .cache/code-search/
-├── wiki-vetting/            ← claim vetting (System One) + lifecycle audit
+├── wiki-vetting/            ← claim vetting, routing actions + lifecycle audit
 │   └── scripts/
 ├── wiki-sync/               ← stale file-linked claims vs git history
 │   └── scripts/

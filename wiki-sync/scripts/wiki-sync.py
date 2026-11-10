@@ -95,16 +95,24 @@ def last_commit_date(path: str) -> str | None:
     return result.stdout.strip() or None
 
 
-def parse_date(value: str) -> datetime | None:
+BARE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def parse_date(value: str, *, end_of_day_if_bare: bool = False) -> datetime | None:
     if not value:
         return None
+    raw = value.strip()
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return None
-    # Page frontmatter carries bare dates; git gives offset-aware stamps. Naive means UTC here.
+    # Page frontmatter carries bare YYYY-MM-DD dates; git gives offset-aware stamps.
+    # When comparing page `updated: YYYY-MM-DD` against a same-day commit timestamp,
+    # a bare date covers the full UTC day so a commit earlier that day is not a
+    # false-positive stale claim.
+    if BARE_DATE_RE.match(raw) and end_of_day_if_bare:
+        parsed = parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
-
 
 def collect(since: str | None) -> dict:
     if since:
@@ -135,7 +143,7 @@ def collect(since: str | None) -> dict:
             continue
         checked += 1
         for rel in sorted(pages):
-            updated_dt = parse_date(page_updated.get(rel, ""))
+            updated_dt = parse_date(page_updated.get(rel, ""), end_of_day_if_bare=True)
             if updated_dt is None or updated_dt < commit_dt:
                 stale.append(
                     {

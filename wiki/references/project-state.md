@@ -31,7 +31,8 @@ title: "Project Goals"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 tags: [project, goals]
-status: seed
+maturity: seed
+verification: unreviewed
 related: []
 ---
 
@@ -62,7 +63,8 @@ title: "Project Dashboard"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 tags: [project, dashboard]
-status: seed
+maturity: seed
+verification: unreviewed
 related: []
 ---
 

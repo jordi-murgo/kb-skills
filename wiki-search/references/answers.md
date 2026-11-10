@@ -15,17 +15,18 @@ answer_quality: solid
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 tags: [question, <domain>]
+maturity: developing
+verification: unreviewed
 related:
   - "[[page-slug]]"
 sources:
   - "[[sources/relevant-source]]"
-status: developing
 ---
 ```
 
 Then write the answer as the page body. Include citations and link every mentioned concept or entity. Replace the example links with existing wiki file stems or wiki-relative paths, not frontmatter titles or `.md` extensions. Use unaliased links inside Markdown tables so `|` does not split cells.
 
-**A filed answer is not yet knowledge.** `status: developing` keeps the page out of the search index when the vault configures `trust.output_types` to include `question` (see [Index commands and configuration](index.md) § Output trust). That is deliberate: an unverified answer that becomes searchable can be cited by the next answer. Promote it to `status: verified` only when you have re-read it against its cited pages, then rebuild the index. A vault without a `trust` section indexes every answer immediately, so set one before filing answers that will be cited later.
+**A filed answer is not yet supported knowledge.** `verification: unreviewed` keeps it out of canonical search when `trust.output_types` includes `question`. After re-reading every claim against its citations, set `verification: supported`, add `evidence:`, and rebuild. `maturity` remains about completeness and does not bypass this gate.
 
 ## Post-filing navigation maintenance
 

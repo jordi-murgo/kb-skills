@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0e1116; --fg: #e6edf3; --muted: #8b949e; --border: #30363d;
+    --surface: #161b22; --accent: #58a6ff;
+    --c1: #58a6ff; --c2: #3fb950; --c3: #d29922; --c4: #bc8cff;
+    --c5: #ff7b72; --c6: #39c5cf; --c7: #f0883e; --c8: #db61a2;
+    --c9: #a5d6ff; --c10: #7ee787; --c11: #e3b341; --c12: #ffa198;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --border: #d0d7de;
+      --surface: #f6f8fa; --accent: #0969da;
+      --c1: #0969da; --c2: #1a7f37; --c3: #9a6700; --c4: #8250df;
+      --c5: #cf222e; --c6: #0e7c86; --c7: #bc4c00; --c8: #bf3989;
+      --c9: #218bff; --c10: #2da44e; --c11: #d4a72c; --c12: #ff8182;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; overflow: hidden; cursor: grab; touch-action: none; }
+  #stage.dragging { cursor: grabbing; }
+  #stage.on-node { cursor: pointer; }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  .panel { position: fixed; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
+
+  #hud { top: 16px; left: 16px; width: 316px; padding: 14px 16px; }
+  #hud h1 { margin: 0 0 2px; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+  #search { width: 100%; padding: 7px 10px; font: inherit; color: var(--fg);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+  #search:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  #results { position: absolute; left: 16px; right: 16px; top: 96px; z-index: 5;
+    margin: 0; padding: 4px; list-style: none; max-height: 260px; overflow: auto;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 10px 24px rgba(0,0,0,.22); }
+  #results[hidden] { display: none; }
+  #results button { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
+    background: none; border: 0; border-radius: 5px; padding: 5px 7px; font: inherit;
+    font-size: 12.5px; color: var(--fg); cursor: pointer; }
+  #results button[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  #results .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #results .k { color: var(--muted); font-size: 11px; margin-left: auto; flex: 0 0 auto; }
+
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+
+  #legend { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 5px 10px; }
+  #legend button { display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+    background: none; border: 0; padding: 1px 0; font: inherit; font-size: 11.5px;
+    color: var(--fg); }
+  #legend button[aria-pressed="false"] { opacity: .35; text-decoration: line-through; }
+  #legend button:hover { color: var(--accent); }
+
+  #toolbar { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  #toolbar button { padding: 4px 9px; font: inherit; font-size: 11.5px; cursor: pointer;
+    color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+  #toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+  #toolbar button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+  #stats { margin: 10px 0 0; padding-top: 9px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+  #inspector { top: 16px; right: 16px; width: 330px; max-height: calc(100% - 32px);
+    overflow: auto; padding: 14px 16px; }
+  #inspector[hidden] { display: none; }
+  #inspector .ih { display: flex; align-items: start; gap: 8px; }
+  #inspector h2 { margin: 0; font-size: 14.5px; font-weight: 650; line-height: 1.35; flex: 1; }
+  #i-close { flex: 0 0 auto; width: 24px; height: 24px; padding: 0; font-size: 17px; line-height: 1;
+    color: var(--muted); background: none; border: 0; border-radius: 5px; cursor: pointer; }
+  #i-close:hover { background: var(--border); color: var(--fg); }
+  #i-meta { margin: 6px 0 8px; }
+  #i-open { display: inline-block; margin-bottom: 10px; font-size: 12px; color: var(--accent); }
+  #i-open[hidden] { display: none; }
+  #i-depth { display: flex; gap: 6px; margin-bottom: 10px; }
+  #i-depth button { padding: 3px 9px; font: inherit; font-size: 11.5px; cursor: pointer;
+    color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 999px; }
+  #i-depth button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  #inspector section { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; }
+  #inspector h3 { margin: 0 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--muted); }
+  #inspector ul { list-style: none; margin: 0; padding: 0; max-height: 210px; overflow: auto; }
+  #inspector li button { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
+    padding: 3px 5px; font: inherit; font-size: 12.5px; color: var(--fg);
+    background: none; border: 0; border-radius: 5px; cursor: pointer; }
+  #inspector li button:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  #inspector li.empty { padding: 3px 5px; font-size: 12px; color: var(--muted); }
+
+  #tip { position: fixed; pointer-events: none; padding: 5px 9px; font-size: 12px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.2); opacity: 0; max-width: 340px; }
+  #tip.on { opacity: 1; }
+  #tip .d { color: var(--muted); }
+
+  #help { bottom: 16px; left: 16px; padding: 8px 12px; color: var(--muted); font-size: 11.5px;
+    display: flex; gap: 12px; flex-wrap: wrap; max-width: calc(100% - 380px); }
+  #help kbd { background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+    padding: 0 4px; font: inherit; font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" role="img" aria-label="Wiki page link graph"></canvas></div>
+
+<header id="hud" class="panel">
+  <h1>__TITLE__</h1>
+  <p class="sub">__SUBTITLE__</p>
+  <input id="search" type="search" placeholder="Find a page…  ( / )"
+         autocomplete="off" spellcheck="false" aria-label="Find a page" aria-controls="results"
+         aria-expanded="false" role="combobox">
+  <ul id="results" role="listbox" aria-label="Matching pages" hidden></ul>
+  <div id="legend"></div>
+  <div id="toolbar">
+    <button id="fit" title="Fit the graph to the view (f)">Fit</button>
+    <button id="relayout" title="Restart the force layout (r)">Re-layout</button>
+    <button id="pause" aria-pressed="false" title="Pause or resume the layout (p)">Pause</button>
+    <button id="png" title="Save the current view as a PNG">PNG</button>
+  </div>
+  <p id="stats" role="status"></p>
+</header>
+
+<aside id="inspector" class="panel" aria-label="Page details" hidden>
+  <div class="ih">
+    <h2 id="i-title"></h2>
+    <button id="i-close" aria-label="Close details">×</button>
+  </div>
+  <p id="i-meta" class="sub"></p>
+  <a id="i-open" hidden>Open the Markdown file</a>
+  <div id="i-depth" role="group" aria-label="Focus depth">
+    <button data-depth="1" aria-pressed="true">1 hop</button>
+    <button data-depth="2" aria-pressed="false">2 hops</button>
+  </div>
+  <section>
+    <h3 id="i-out-h">Links from this page</h3>
+    <ul id="i-out"></ul>
+  </section>
+  <section>
+    <h3 id="i-in-h">Pages linking here</h3>
+    <ul id="i-in"></ul>
+  </section>
+</aside>
+
+<div id="tip"></div>
+<div id="help" class="panel">
+  <span><kbd>drag</kbd> pan · <kbd>drag node</kbd> pin · <kbd>dbl-click</kbd> unpin</span>
+  <span><kbd>wheel</kbd> zoom · <kbd>click</kbd> inspect · <kbd>esc</kbd> clear</span>
+  <span><kbd>/</kbd> find · <kbd>f</kbd> fit · <kbd>r</kbd> re-layout · <kbd>p</kbd> pause</span>
+</div>
+
+<script id="graph" type="application/json">__DATA__</script>
+<script>
+(() => {
+  "use strict";
+
+  const DATA = JSON.parse(document.getElementById("graph").textContent);
+  const N = DATA.nodes;
+  const byId = new Map(N.map(n => [n.id, n]));
+
+  // Directed adjacency is kept: the layout and the "focus" dimming are
+  // undirected, but the inspector has to say which way each link points.
+  const outAdj = new Map(N.map(n => [n.id, []]));
+  const inAdj = new Map(N.map(n => [n.id, []]));
+  const neigh = new Map(N.map(n => [n.id, new Set()]));
+  for (const l of DATA.links) {
+    if (!byId.has(l.s) || !byId.has(l.t)) continue;
+    outAdj.get(l.s).push(l.t);
+    inAdj.get(l.t).push(l.s);
+    neigh.get(l.s).add(l.t);
+    neigh.get(l.t).add(l.s);
+  }
+
+  // A mutual pair is one visual edge, drawn with a chevron in each direction.
+  const EDGES = [];
+  {
+    const seen = new Map();
+    for (const l of DATA.links) {
+      if (!byId.has(l.s) || !byId.has(l.t)) continue;
+      const key = l.s < l.t ? l.s + "\u0000" + l.t : l.t + "\u0000" + l.s;
+      const prev = seen.get(key);
+      if (!prev) { const e = { a: l.s, b: l.t, both: false }; seen.set(key, e); EDGES.push(e); }
+      else if (prev.a !== l.s) prev.both = true;
+    }
+  }
+
+  const stage = document.getElementById("stage");
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d", { alpha: false });
+  const tip = document.getElementById("tip");
+  const stats = document.getElementById("stats");
+  const inspector = document.getElementById("inspector");
+  const search = document.getElementById("search");
+  const results = document.getElementById("results");
+
+  let W = 0, H = 0, dpr = 1;
+  const view = { x: 0, y: 0, k: 1 };
+
+  // ---- colours ------------------------------------------------------------
+  // Read once and again only when the OS theme flips: getPropertyValue per
+  // node per frame is the difference between 60 fps and a slideshow.
+  let COL = {};
+  function reloadColors() {
+    const cs = getComputedStyle(document.documentElement);
+    const v = name => cs.getPropertyValue(name).trim();
+    COL = {
+      bg: v("--bg"), fg: v("--fg"), muted: v("--muted"),
+      border: v("--border"), accent: v("--accent"),
+      types: {},
+    };
+    for (const [key, meta] of Object.entries(DATA.types)) COL.types[key] = v("--" + meta.color);
+    COL.types.missing = COL.types.missing || COL.muted;
+  }
+  reloadColors();
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+    reloadColors(); renderInspector(); draw();
+  });
+  const colorOf = t => COL.types[t] || COL.muted;
+
+  // ---- layout -------------------------------------------------------------
+  // A hub touching 180 leaves turns plain spring forces into a hairball. Three
+  // things keep it readable: repulsion scales with degree, links pull weakly,
+  // and the simulation cools instead of running forever.
+  const RE = Math.min(1100, Math.max(420, Math.sqrt(N.length) * 46));
+  N.forEach((n, i) => {
+    const a = (i / Math.max(1, N.length)) * Math.PI * 2;
+    n.x = Math.cos(a) * RE * 0.55 + (Math.random() - .5) * 40;
+    n.y = Math.sin(a) * RE * 0.55 + (Math.random() - .5) * 40;
+    n.vx = n.vy = 0;
+    n.fx = n.fy = 0;
+    n.i = i;
+    n.deg = neigh.get(n.id).size;
+    n.r = 2.4 + Math.sqrt(n.deg) * 1.6;
+    n.hidden = false;
+    n.pinned = false;
+  });
+
+  // Uniform grid instead of the all-pairs double loop: at the 1,500-node cap
+  // all-pairs is 1.1M comparisons per tick, which never settles in a browser.
+  // Force magnitudes follow d3-force's units (px of velocity per tick): charge
+  // ~90/d, link strength ~0.5, decay 0.55. Anything an order of magnitude
+  // larger drives every node into the velocity clamp and the graph collapses to
+  // a needle, which is exactly what the first two attempts did.
+  const CELL = 220, CUT = CELL * CELL;
+  const CHARGE = 90, LINK_DIST = 42, LINK_STRENGTH = 0.5;
+  const DECAY = 0.55, MAXV = 12;
+
+  // Orphans (no incoming and no outgoing link) take no part in the simulation.
+  // Charge alone walks them off screen, and a spring toward a ring still gets
+  // dented by that charge field. They are placed on a ring afterwards, one
+  // angular slot each: the arc reads as a ring and "nothing links here" is
+  // legible without opening the inspector.
+  function placeOrphans() {
+    const core = N.filter(n => !n.hidden && n.deg > 0);
+    // A pinned orphan was dragged somewhere on purpose; snapping it back to its
+    // slot would undo the drag on every later tick.
+    const orphans = N.filter(n => !n.hidden && n.deg === 0 && !n.pinned);
+    if (!orphans.length) return;
+    if (!core.length) {
+      // Nothing connected: a plain circle beats one degenerate node.
+      const R = Math.max(160, Math.sqrt(orphans.length) * 26);
+      orphans.forEach((n, i) => {
+        const a = (i / orphans.length) * Math.PI * 2;
+        n.x = Math.cos(a) * R; n.y = Math.sin(a) * R;
+        n.vx = n.vy = 0;
+      });
+      return;
+    }
+    let cx = 0, cy = 0;
+    for (const n of core) { cx += n.x; cy += n.y; }
+    cx /= core.length; cy /= core.length;
+    // Radius from the 90th percentile, not the maximum: a single outlier at
+    // several times the corpus radius would otherwise push the ring so far out
+    // that fitting it shrank the core to a dot.
+    const radii = core.map(n => Math.hypot(n.x - cx, n.y - cy)).sort((a, b) => a - b);
+    const spread = radii[Math.floor(radii.length * 0.9)] || 60;
+    // The ring sits just outside the core, never at a fixed distance from it.
+    // An earlier `spread + 900/sqrt(n)` put a single orphan 900px out, which made
+    // `fit()` shrink a 35-page vault to a dot in the corner. The gap now scales
+    // with the corpus, and a handful of orphans get a small arc rather than a
+    // full circle with one dot on it.
+    // Arc length per orphan must fit its drawn dot, or 86 orphans on one
+    // circumference are a string of touching beads. When the circle is too short
+    // for that, grow the radius instead of letting them overlap: the ring costs
+    // some framing, an overlapping ring costs legibility.
+    // Arc needed per orphan is its *diameter*, not its radius: at radius R the
+    // spacing between neighbours is 2*pi*R/n, so sizing R off a radius produced a
+    // ring where 86 beads still touched.
+    const widest = orphans.reduce((w, n) => Math.max(w, n.r), 0);
+    const bead = widest * 2 * 1.15;
+    const circumferenceNeeded = bead * orphans.length;
+    const gap = Math.max(28, spread * 0.16);
+    const R = Math.max(spread + gap, circumferenceNeeded / (2 * Math.PI));
+    // Any core node beyond the ring is an outlier the decaying centring force no
+    // longer pulls back; left alone it floats outside the ring and reads as a
+    // rendering bug. Pull those in to just inside the ring, keeping their angle.
+    for (const n of core) {
+      const dx = n.x - cx, dy = n.y - cy;
+      const d = Math.hypot(dx, dy);
+      const limit = R * 0.94;
+      if (d > limit) {
+        n.x = cx + (dx / d) * limit;
+        n.y = cy + (dy / d) * limit;
+        n.vx = n.vy = 0;
+      }
+    }
+    orphans.forEach((n, i) => {
+      const a = (i / orphans.length) * Math.PI * 2 - Math.PI / 2;
+      n.x = cx + Math.cos(a) * R;
+      n.y = cy + Math.sin(a) * R;
+      n.vx = n.vy = 0;
+    });
+  }
+
+  // Positional-only overlap removal, run once the simulation has stopped.
+  //
+  // During the run, collision and the link springs reach an equilibrium that can
+  // leave a degree-1 node a few pixels inside its hub's cluster: the spring pulls
+  // it back every tick. Once alpha is 0 there is nothing to fight, so a few pure
+  // separation passes settle it exactly — 2 passes on a 315-page vault.
+  function separateOverlaps(iterations) {
+    for (let pass = 0; pass < iterations; pass++) {
+      let moved = 0;
+      let widest = 0;
+      for (const n of N) if (!n.hidden && n.deg > 0) widest = Math.max(widest, n.r);
+      const cell = Math.max(widest * 2.3, 8);
+      const grid = new Map();
+      for (const n of N) {
+        if (n.hidden || n.deg === 0) continue;
+        const key = Math.floor(n.x / cell) + "," + Math.floor(n.y / cell);
+        let b = grid.get(key);
+        if (!b) grid.set(key, b = []);
+        b.push(n);
+      }
+      for (const n of N) {
+        if (n.hidden || n.deg === 0 || n.pinned) continue;
+        const gx = Math.floor(n.x / cell), gy = Math.floor(n.y / cell);
+        for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+          const b = grid.get((gx + ox) + "," + (gy + oy));
+          if (!b) continue;
+          for (const m of b) {
+            if (m.i <= n.i || m.hidden || m.deg === 0) continue;
+            const dx = m.x - n.x, dy = m.y - n.y;
+            const d2 = dx * dx + dy * dy;
+            const minD = (n.r + m.r) * 1.12;
+            if (d2 >= minD * minD) continue;
+            const d = Math.sqrt(d2);
+            let ux, uy;
+            if (d2 < 1e-9) { const a = (n.i * 2.399963) % 6.28318; ux = Math.cos(a); uy = Math.sin(a); }
+            else { ux = dx / d; uy = dy / d; }
+            const push = minD - d;
+            if (m.pinned) { n.x -= ux * push; n.y -= uy * push; }
+            else { n.x -= ux * push * 0.5; n.y -= uy * push * 0.5; m.x += ux * push * 0.5; m.y += uy * push * 0.5; }
+            moved++;
+          }
+        }
+      }
+      if (!moved) break;
+    }
+  }
+
+  function step(alpha) {
+    const cells = new Map();
+    for (const n of N) {
+      if (n.hidden || n.deg === 0) continue;
+      const key = Math.floor(n.x / CELL) + "," + Math.floor(n.y / CELL);
+      let bucket = cells.get(key);
+      if (!bucket) cells.set(key, bucket = []);
+      bucket.push(n);
+      n.fx = 0; n.fy = 0;
+    }
+    for (const n of N) {
+      if (n.hidden || n.deg === 0) continue;
+      const gx = Math.floor(n.x / CELL), gy = Math.floor(n.y / CELL);
+      if (n.deg === 0) continue;
+      for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+        const bucket = cells.get((gx + ox) + "," + (gy + oy));
+        if (!bucket) continue;
+        for (const m of bucket) {
+          if (m.i <= n.i || m.deg === 0) continue;
+          let dx = m.x - n.x, dy = m.y - n.y;
+          let d2 = dx * dx + dy * dy;
+          if (d2 > CUT) continue;
+          if (d2 < 1) { dx = (Math.random() - .5) * 2; dy = (Math.random() - .5) * 6; d2 = 4; }
+          const d = Math.sqrt(d2);
+          const ux = dx / d, uy = dy / d;
+
+          // Charge falls off as 1/d, which is exactly wrong where the graph is
+          // densest: two hubs 12px apart push each other less than two leaves
+          // 200px apart. That is why the core of a 315-page vault rendered as a
+          // pile of overlapping discs (49 overlapping pairs, measured) while a
+          // 35-page vault was fine.
+          n.fx -= ux * CHARGE * alpha / d; n.fy -= uy * CHARGE * alpha / d;
+          m.fx += ux * CHARGE * alpha / d; m.fy += uy * CHARGE * alpha / d;
+
+          // Hard-core collision: nodes have a drawn radius, so two of them must
+          // not occupy the same pixels. Push apart with a correction proportional
+          // to the overlap, independent of alpha, so it survives the cooling that
+          // lets charge decay.
+          //
+          // Strength 0.55 with a small slop rather than 1.0: a single pair sitting
+          // deep inside a hub's cluster is held there by every other neighbour, and
+          // a full-strength push makes it oscillate instead of settling. A slop of
+          // 1.5px stops the last touching pairs from jittering forever.
+          const minD = (n.r + m.r) * 1.15;
+          if (d < minD - 1.5) {
+            const push = Math.min(minD - d, 8) * 0.55;
+            n.fx -= ux * push; n.fy -= uy * push;
+            m.fx += ux * push; m.fy += uy * push;
+          }
+        }
+      }
+    }
+    for (const e of EDGES) {
+      const a = byId.get(e.a), b = byId.get(e.b);
+      if (a.hidden || b.hidden) continue;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      // Per-node strength, so a hub with 150 links does not pull with 150x the
+      // force of a leaf and fold its whole star into the origin.
+      const s = LINK_STRENGTH / Math.max(1, Math.min(a.deg, b.deg));
+      const f = (d - LINK_DIST) / d * s * alpha;
+      a.fx += dx * f; a.fy += dy * f;
+      b.fx -= dx * f; b.fy -= dy * f;
+    }
+    let maxR2 = 0;
+    for (const n of N) {
+      if (n.hidden || n.deg === 0) continue;
+      n.fx -= n.x * 0.012 * alpha;
+      n.fy -= n.y * 0.012 * alpha;
+      // Per-node clamp: a hub inside a dense pocket can accumulate hundreds of
+      // pair forces in one tick, and that is what turns the layout into a line.
+      const fm = Math.hypot(n.fx, n.fy);
+      if (fm > MAXV) { n.fx *= MAXV / fm; n.fy *= MAXV / fm; }
+      n.vx = (n.vx + n.fx) * (1 - DECAY);
+      n.vy = (n.vy + n.fy) * (1 - DECAY);
+      const sp = Math.hypot(n.vx, n.vy);
+      if (sp > MAXV) { n.vx *= MAXV / sp; n.vy *= MAXV / sp; }
+      if (!n.pinned) { n.x += n.vx; n.y += n.vy; }
+      else { n.vx = n.vy = 0; }
+      maxR2 = Math.max(maxR2, n.x * n.x + n.y * n.y);
+    }
+    // Second separation pass, positional and independent of alpha. The force-
+    // based push above has to fight the link springs holding a cluster together,
+    // so a node wedged between neighbours never escapes it. Moving the pair apart
+    // directly is what `forceCollide().iterations(3)` buys in d3.
+    //
+    // The grid has to be rebuilt here: positions changed during the integration
+    // above, so the buckets from the force pass point at where nodes *were*. With
+    // the stale grid, pairs sitting right at a cell boundary are never compared and
+    // survive as overlaps.
+    for (let pass = 0; pass < 2; pass++) {
+      const sep = new Map();
+      let cell = 0;
+      for (const n of N) {
+        if (n.hidden || n.deg === 0) continue;
+        cell = Math.max(cell, n.r * 2);
+      }
+      cell = Math.max(cell * 1.15, 8);
+      for (const n of N) {
+        if (n.hidden || n.deg === 0) continue;
+        const key = Math.floor(n.x / cell) + "," + Math.floor(n.y / cell);
+        let bucket = sep.get(key);
+        if (!bucket) sep.set(key, bucket = []);
+        bucket.push(n);
+      }
+      for (const n of N) {
+        if (n.hidden || n.deg === 0 || n.pinned) continue;
+        const gx = Math.floor(n.x / cell), gy = Math.floor(n.y / cell);
+        for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+          const bucket = sep.get((gx + ox) + "," + (gy + oy));
+          if (!bucket) continue;
+          for (const m of bucket) {
+            if (m.i <= n.i || m.hidden || m.deg === 0) continue;
+            const dx = m.x - n.x, dy = m.y - n.y;
+            let d2 = dx * dx + dy * dy;
+            const minD = (n.r + m.r) * 1.15;
+            if (d2 >= minD * minD) continue;
+            // Two nodes can land on the exact same coordinate — that is what a
+            // deterministic seed plus cooling does — and treating it as "already
+            // separated" froze the pair forever at distance 0, which is how two
+            // dots kept rendering on top of each other at (726,272).
+            let ux, uy;
+            if (d2 < 1e-6) {
+              const a = (n.i * 2.399963) % (Math.PI * 2);
+              ux = Math.cos(a); uy = Math.sin(a);
+              d2 = 0;
+            } else {
+              const d = Math.sqrt(d2);
+              ux = dx / d; uy = dy / d;
+            }
+            const d = Math.sqrt(d2);
+            const share = (minD - d) * 0.5;
+            // Never move a pinned node; give its share to the other one.
+            if (n.pinned) { m.x += ux * share * 2; m.y += uy * share * 2; }
+            else if (m.pinned) { n.x -= ux * share * 2; n.y -= uy * share * 2; }
+            else {
+              n.x -= ux * share; n.y -= uy * share;
+              m.x += ux * share; m.y += uy * share;
+            }
+          }
+        }
+      }
+    }
+
+    // Positions moved after `maxR2` was measured, so recompute before the bound.
+    maxR2 = 0;
+    for (const n of N) {
+      if (n.hidden || n.deg === 0) continue;
+      maxR2 = Math.max(maxR2, n.x * n.x + n.y * n.y);
+    }
+
+    // Hard bound: an overshooting frame is scaled back as a whole, keeping the
+    // relative arrangement instead of clipping individual nodes.
+    const bound = RE * 2.4;
+    if (maxR2 > bound * bound) {
+      const s = bound / Math.sqrt(maxR2);
+      for (const n of N) { n.x *= s; n.y *= s; n.vx *= s; n.vy *= s; }
+    }
+  }
+
+  let alpha = 1, running = false, paused = false, firstFit = true;
+  let fitZoom = 1;
+
+  function runSim(boost, budget = 1400) {
+    alpha = Math.max(alpha, boost);
+    if (running || paused) return;
+    running = true;
+    const t0 = performance.now();
+    const tick = () => {
+      step(Math.max(alpha, 0.02));
+      alpha *= 0.93;
+      draw();
+      if (paused || alpha <= 0.02 || performance.now() - t0 > budget) {
+        running = false;
+        placeOrphans();
+        separateOverlaps(6);
+        if (firstFit) { firstFit = false; fit(); }
+        draw();
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  // ---- view ---------------------------------------------------------------
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = stage.clientWidth; H = stage.clientHeight;
+    canvas.width = Math.floor(W * dpr); canvas.height = Math.floor(H * dpr);
+    canvas.style.width = W + "px"; canvas.style.height = H + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw();
+  }
+
+  function toWorld(px, py) {
+    return { x: (px - W / 2) / view.k - view.x, y: (py - H / 2) / view.k - view.y };
+  }
+
+  function pick(px, py) {
+    let best = null, bestD = Infinity;
+    for (const n of N) {
+      if (n.hidden) continue;
+      const sx = W / 2 + view.k * (n.x + view.x);
+      const sy = H / 2 + view.k * (n.y + view.y);
+      const d = Math.hypot(px - sx, py - sy);
+      const hit = Math.max(n.r * view.k + 4, 7);
+      if (d < hit && d < bestD) { bestD = d; best = n; }
+    }
+    return best;
+  }
+
+  // Panels cover the canvas, so "centre" and "fit" target the visible middle
+  // rather than the geometric one.
+  const HUD_WIDTH = 348, INSPECTOR_WIDTH = 362;
+
+  function fit() {
+    const vis = N.filter(n => !n.hidden);
+    if (!vis.length) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const n of vis) {
+      x0 = Math.min(x0, n.x - n.r); x1 = Math.max(x1, n.x + n.r);
+      y0 = Math.min(y0, n.y - n.r); y1 = Math.max(y1, n.y + n.r);
+    }
+    const left = W > 900 ? HUD_WIDTH : 0;
+    const right = !inspector.hidden && W > 900 ? INSPECTOR_WIDTH : 0;
+    const top = 24, bottom = 64;
+    const w = Math.max(1, W - left - right);
+    const h = Math.max(1, H - top - bottom);
+    // Floor the world extent before dividing. A three-page vault has a bounding
+    // box of ~40 units, so an honest fit computes k≈25 and the old 2.5 cap then
+    // rendered it as three dots in the middle of a 1440px canvas. Treating a tiny
+    // graph as if it occupied MIN_EXTENT keeps the zoom sane without a hard cap.
+    // Scale with the corpus: 60 units is right for three pages, absurd for three
+    // hundred. sqrt(n) keeps a tiny vault filling the view without letting a big
+    // one be zoomed out by a floor it does not need.
+    const MIN_EXTENT = 26 * Math.sqrt(Math.max(1, vis.length));
+    const ex = Math.max(x1 - x0, MIN_EXTENT);
+    const ey = Math.max(y1 - y0, MIN_EXTENT);
+    const k = Math.min(w / ex, h / ey);
+    view.k = Math.max(0.05, Math.min(6, k));
+    view.x = -(x0 + x1) / 2 + (left + w / 2 - W / 2) / view.k;
+    view.y = -(y0 + y1) / 2 + (top + h / 2 - H / 2) / view.k;
+    // The zoom the whole graph fits at. Label policy is relative to this, not to
+    // an absolute 1.1: a 35-page vault fits at k=4 and a 315-page one at k=1.6, so
+    // an absolute threshold silently switched the degree rule off on the larger
+    // vault — 56 labels where the code promised 26.
+    fitZoom = view.k;
+    draw();
+  }
+
+  function centre(n) {
+    const right = inspector.hidden ? 0 : INSPECTOR_WIDTH + 24;
+    const cx = (W - right + (W > 900 ? HUD_WIDTH : 0)) / 2;
+    view.x = -n.x + (cx - W / 2) / view.k;
+    view.y = -n.y;
+    draw();
+  }
+
+  // ---- selection, focus, filtering ----------------------------------------
+  let selected = null, depth = 1, query = "", activeResult = -1;
+  let hover = null, dragNode = null, dragView = null, dragOffset = null, moved = false;
+  const activeTypes = new Set(Object.keys(DATA.types));
+
+  function focusIds() {
+    if (!selected) return null;
+    const set = new Set([selected.id]);
+    let frontier = [selected.id];
+    for (let d = 0; d < depth; d++) {
+      const next = [];
+      for (const id of frontier) {
+        for (const m of neigh.get(id) || []) {
+          if (!set.has(m)) { set.add(m); next.push(m); }
+        }
+      }
+      frontier = next;
+    }
+    return set;
+  }
+
+  function select(n) {
+    selected = n;
+    if (n) history.replaceState(null, "", "#" + encodeURIComponent(n.id));
+    else history.replaceState(null, "", location.pathname + location.search);
+    renderInspector();
+    draw();
+  }
+
+  function applyFilterState() {
+    for (const n of N) n.hidden = !activeTypes.has(n.type);
+    updateStats();
+    draw();
+  }
+
+  function matchesOf(q) {
+    if (!q) return null;
+    return new Set(N.filter(n => !n.hidden &&
+      (n.id.includes(q) || n.title.toLowerCase().includes(q))).map(n => n.id));
+  }
+
+  // ---- drawing ------------------------------------------------------------
+  // Label budget: a rank cutoff, not a degree cutoff, so the page looks the same
+  // whether the vault has 30 pages or 800. Hover, selection and search hits are
+  // always labelled on top of this.
+  let drawGrid = null;
+  const LABEL_TOP = 26;
+  // Take the degree at rank LABEL_TOP and add nothing: a floor of 2 was wrong,
+  // because `deg` is the number of *distinct neighbours* — the ends of a two-page
+  // vault have deg 1, and a floor of 2 labelled nothing at all. `-1` keeps the
+  // comparison inclusive below the corpus size.
+  const labelCutoff = (() => {
+    const degs = N.map(n => n.deg).sort((a, b) => b - a);
+    if (!degs.length) return Infinity;
+    return degs[Math.min(LABEL_TOP, degs.length) - 1];
+  })();
+
+  function draw() {
+    ctx.save();
+    ctx.fillStyle = COL.bg;
+    ctx.fillRect(0, 0, W, H);
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(view.k, view.k);
+    ctx.translate(view.x, view.y);
+
+    const focus = focusIds();
+    const matched = matchesOf(query);
+    const litEdge = (a, b) => focus && focus.has(a) && focus.has(b);
+
+    // Edges.
+    ctx.lineWidth = 0.6 / view.k;
+    for (const e of EDGES) {
+      const a = byId.get(e.a), b = byId.get(e.b);
+      if (a.hidden || b.hidden) continue;
+      const lit = litEdge(a.id, b.id);
+      const faded = (focus && !lit) || (matched && !matched.has(a.id) && !matched.has(b.id) && !lit);
+      ctx.globalAlpha = lit ? 0.6 : faded ? 0.05 : 0.15;
+      ctx.strokeStyle = lit ? COL.accent : COL.border;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+
+    // Direction: one chevron per direction that exists, only where it can be
+    // read — always for a focused edge, otherwise once zoomed in.
+    const chevron = (x, y, ux, uy) => {
+      const s = 4.5 / view.k;
+      ctx.beginPath();
+      ctx.moveTo(x - ux * s - uy * s * 0.75, y - uy * s + ux * s * 0.75);
+      ctx.lineTo(x + ux * s * 0.5, y + uy * s * 0.5);
+      ctx.lineTo(x - ux * s + uy * s * 0.75, y - uy * s - ux * s * 0.75);
+      ctx.stroke();
+    };
+    if (view.k > 0.85 || focus) {
+      for (const e of EDGES) {
+        const a = byId.get(e.a), b = byId.get(e.b);
+        if (a.hidden || b.hidden) continue;
+        const lit = litEdge(a.id, b.id);
+        if (!lit && view.k <= 0.85) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.sqrt(dx * dx + dy * dy) || 1;
+        const ux = dx / d, uy = dy / d;
+        ctx.strokeStyle = lit ? COL.accent : COL.border;
+        ctx.globalAlpha = lit ? 0.7 : 0.2;
+        ctx.lineWidth = 1 / view.k;
+        chevron(a.x + dx * 0.55, a.y + dy * 0.55, ux, uy);
+        if (e.both) chevron(b.x - dx * 0.45, b.y - dy * 0.45, -ux, -uy);
+        ctx.lineWidth = 0.6 / view.k;
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // Nodes.
+    const labels = [];
+    for (const n of N) {
+      if (n.hidden) continue;
+      const dim = (focus && !focus.has(n.id)) || (matched && !matched.has(n.id));
+      ctx.globalAlpha = dim ? 0.22 : 1;
+      ctx.fillStyle = colorOf(n.type);
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 6.2832); ctx.fill();
+
+      const ring = n === selected || n === hover || (matched && matched.has(n.id));
+      if (ring) {
+        ctx.strokeStyle = n === selected ? COL.fg : COL.accent;
+        ctx.lineWidth = (n === selected ? 2 : 1.3) / view.k;
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 2.6 / view.k, 0, 6.2832); ctx.stroke();
+      }
+      if (n.pinned) {
+        ctx.strokeStyle = COL.muted;
+        ctx.lineWidth = 1 / view.k;
+        ctx.setLineDash([2 / view.k, 2 / view.k]);
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 5 / view.k, 0, 6.2832); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      // Labels are drawn last, biggest first, with a cheap overlap test: 400
+      // labels at fit-zoom is a grey rectangle, not a diagram.
+      // Two regimes, split by zoom relative to the fitted view. At or near fit,
+      // label only the hubs — 315 labels is a grey smear. Past twice the fitted
+      // zoom, whatever is large on screen earns its name; that is what makes
+      // zooming worth doing.
+      const zoomedIn = view.k > fitZoom * 1.35;
+      const want = !dim && (n === selected || n === hover || (matched && matched.has(n.id))
+        || (zoomedIn ? n.r * view.k > 5 : n.deg >= labelCutoff));
+      if (want) labels.push(n);
+    }
+
+    labels.sort((a, b) => b.r - a.r);
+    ctx.font = (11 / view.k) + "px ui-sans-serif, system-ui, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillStyle = COL.fg;
+    // Occupancy grid in *screen* cells, Logseq's rule with a text-shaped cell
+    // (132x24 is a label, not a marker): one label per cell, and a cap on the
+    // whole screen so zooming into a hub cannot fill the view with names. The
+    // rectangle test still runs inside a cell, because two short labels can share
+    // one.
+    const CELL_W = 150, CELL_H = 26;
+    if (!drawGrid) drawGrid = new Map();
+    drawGrid.clear();
+    const boxes = [];
+    let drawn = 0;
+    const cap = Math.max(12, Math.min(48, Math.round((W * H) / 34000)));
+    for (const n of labels) {
+      if (drawn >= cap) break;
+      const w = ctx.measureText(n.title).width;
+      const h = 13 / view.k;
+      const bx = n.x - w / 2, by = n.y + n.r + 3 / view.k;
+      // Screen position of the label's anchor, for the occupancy key.
+      const sx = W / 2 + view.k * (n.x + view.x);
+      const sy = H / 2 + view.k * (n.y + view.y + n.r) + 3;
+      const cellKey = Math.floor(sx / CELL_W) + ":" + Math.floor(sy / CELL_H);
+      if (drawGrid.has(cellKey)) continue;
+      if (boxes.some(b => bx < b.x + b.w && bx + w > b.x && by < b.y + b.h && by + h > b.y)) continue;
+      drawGrid.set(cellKey, true);
+      boxes.push({ x: bx, y: by, w, h });
+      ctx.globalAlpha = n === selected || n === hover ? 1 : 0.75;
+      ctx.fillText(n.title, n.x, by, 190 / view.k);
+      drawn++;
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // ---- inspector ----------------------------------------------------------
+  function fillList(ul, ids) {
+    ul.textContent = "";
+    const uniq = [...new Set(ids)].map(id => byId.get(id)).filter(Boolean);
+    if (!uniq.length) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "none";
+      ul.append(li);
+      return;
+    }
+    uniq.sort((a, b) => a.title.localeCompare(b.title));
+    for (const t of uniq) {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.type = "button";
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.style.background = colorOf(t.type);
+      b.append(dot, document.createTextNode(t.title));
+      b.title = t.path || t.id;
+      b.addEventListener("click", () => { select(t); centre(t); });
+      li.append(b);
+      ul.append(li);
+    }
+  }
+
+  function renderInspector() {
+    if (!selected) { inspector.hidden = true; return; }
+    inspector.hidden = false;
+    document.getElementById("i-title").textContent = selected.title;
+    const outs = new Set(outAdj.get(selected.id) || []);
+    const ins = new Set(inAdj.get(selected.id) || []);
+    const typeLabel = DATA.types[selected.type]?.label || selected.type;
+    document.getElementById("i-meta").textContent =
+      `${typeLabel} · ${outs.size} outgoing · ${ins.size} incoming` +
+      (selected.path ? ` · ${selected.path}` : " · dangling link target");
+    const open = document.getElementById("i-open");
+    if (selected.href) { open.href = selected.href; open.hidden = false; }
+    else open.hidden = true;
+    document.getElementById("i-out-h").textContent =
+      `Links from this page (${outs.size})`;
+    document.getElementById("i-in-h").textContent =
+      `Pages linking here (${ins.size})`;
+    fillList(document.getElementById("i-out"), [...outs]);
+    fillList(document.getElementById("i-in"), [...ins]);
+  }
+
+  // ---- interactions -------------------------------------------------------
+  stage.addEventListener("pointerdown", e => {
+    if (e.button !== 0) return;
+    moved = false;
+    const n = pick(e.clientX, e.clientY);
+    if (n && !e.shiftKey) {
+      dragNode = n;
+      n.pinned = true;
+      const p = toWorld(e.clientX, e.clientY);
+      dragOffset = { x: n.x - p.x, y: n.y - p.y };
+      runSim(0.25, 900);
+    } else {
+      dragView = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+      stage.classList.add("dragging");
+    }
+    stage.setPointerCapture(e.pointerId);
+  });
+
+  stage.addEventListener("pointermove", e => {
+    if (dragNode) {
+      const p = toWorld(e.clientX, e.clientY);
+      dragNode.x = p.x + dragOffset.x;
+      dragNode.y = p.y + dragOffset.y;
+      dragNode.vx = dragNode.vy = 0;
+      moved = true;
+      runSim(0.18, 700);
+      draw();
+      return;
+    }
+    if (dragView) {
+      const dx = e.clientX - dragView.x, dy = e.clientY - dragView.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      view.x = dragView.vx + dx / view.k;
+      view.y = dragView.vy + dy / view.k;
+      draw();
+      return;
+    }
+    hover = pick(e.clientX, e.clientY);
+    stage.classList.toggle("on-node", !!hover);
+    if (hover) {
+      tip.textContent = "";
+      const strong = document.createElement("strong");
+      strong.textContent = hover.title;
+      const dim = document.createElement("span");
+      dim.className = "d";
+      dim.textContent = ` · ${DATA.types[hover.type]?.label || hover.type} · ${hover.deg} link${hover.deg === 1 ? "" : "s"}`;
+      tip.append(strong, dim);
+      tip.style.left = Math.min(e.clientX + 14, W - 350) + "px";
+      tip.style.top = (e.clientY + 16) + "px";
+      tip.classList.add("on");
+    } else tip.classList.remove("on");
+    draw();
+  });
+
+  stage.addEventListener("pointerup", e => {
+    stage.classList.remove("dragging");
+    if (dragNode && !moved) {
+      if (dragNode === selected) select(null);
+      else { select(dragNode); centre(dragNode); }
+    }
+    dragNode = null; dragView = null; dragOffset = null;
+    draw();
+  });
+
+  stage.addEventListener("pointerleave", () => {
+    hover = null; tip.classList.remove("on");
+    dragNode = null; dragView = null;
+    stage.classList.remove("dragging", "on-node");
+    draw();
+  });
+
+  // Double-click a node to release its pin, or the empty canvas to re-fit.
+  stage.addEventListener("dblclick", e => {
+    const n = pick(e.clientX, e.clientY);
+    if (n) { n.pinned = false; runSim(0.2, 900); draw(); }
+    else fit();
+  });
+
+  stage.addEventListener("wheel", e => {
+    e.preventDefault();
+    const before = toWorld(e.clientX, e.clientY);
+    const f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0016));
+    view.k = Math.min(6, Math.max(0.05, view.k * f));
+    const after = toWorld(e.clientX, e.clientY);
+    view.x += after.x - before.x;
+    view.y += after.y - before.y;
+    draw();
+  }, { passive: false });
+
+  // ---- search -------------------------------------------------------------
+  function closeResults() {
+    results.hidden = true;
+    results.textContent = "";
+    search.setAttribute("aria-expanded", "false");
+    activeResult = -1;
+  }
+
+  function updateResults() {
+    const q = search.value.trim().toLowerCase();
+    results.textContent = "";
+    if (!q) { closeResults(); return; }
+    const hits = N.filter(n => !n.hidden &&
+      (n.id.includes(q) || n.title.toLowerCase().includes(q))).slice(0, 8);
+    if (!hits.length) { closeResults(); return; }
+    hits.forEach((n, i) => {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("role", "option");
+      b.dataset.index = String(i);
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.style.background = colorOf(n.type);
+      const label = document.createElement("span");
+      label.className = "t";
+      label.textContent = n.title;
+      const kind = document.createElement("span");
+      kind.className = "k";
+      kind.textContent = DATA.types[n.type]?.label || n.type;
+      b.append(dot, label, kind);
+      b.addEventListener("click", () => choose(n));
+      li.append(b);
+      results.append(li);
+    });
+    results.hidden = false;
+    search.setAttribute("aria-expanded", "true");
+    activeResult = 0;
+    markActive();
+  }
+
+  function markActive() {
+    for (const b of results.querySelectorAll("button")) {
+      b.setAttribute("aria-selected", Number(b.dataset.index) === activeResult ? "true" : "false");
+    }
+  }
+
+  function choose(n) {
+    query = "";
+    search.value = "";
+    closeResults();
+    select(n);
+    centre(n);
+  }
+
+  search.addEventListener("input", () => {
+    query = search.value.trim().toLowerCase();
+    updateResults();
+    draw();
+  });
+
+  search.addEventListener("keydown", e => {
+    const items = [...results.querySelectorAll("button")];
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (!items.length) return;
+      e.preventDefault();
+      activeResult = (activeResult + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+      markActive();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const hit = items.find(b => Number(b.dataset.index) === activeResult) || items[0];
+      if (hit) hit.click();
+    } else if (e.key === "Escape") {
+      search.value = ""; query = ""; closeResults(); draw();
+    }
+  });
+
+  // ---- hud ----------------------------------------------------------------
+  const legend = document.getElementById("legend");
+  for (const [key, meta] of Object.entries(DATA.types)) {
+    const count = N.filter(n => n.type === key).length;
+    if (!count) continue;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("aria-pressed", "true");
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = colorOf(key);
+    b.append(dot, document.createTextNode(`${meta.label} (${count})`));
+    b.addEventListener("click", () => {
+      if (activeTypes.has(key)) activeTypes.delete(key); else activeTypes.add(key);
+      b.setAttribute("aria-pressed", activeTypes.has(key) ? "true" : "false");
+      if (selected && selected.hidden) select(null);
+      applyFilterState();
+      placeOrphans();
+      draw();
+    });
+    legend.append(b);
+  }
+
+  document.getElementById("i-close").addEventListener("click", () => select(null));
+
+  for (const b of document.querySelectorAll("#i-depth button")) {
+    b.addEventListener("click", () => {
+      depth = Number(b.dataset.depth);
+      for (const other of document.querySelectorAll("#i-depth button")) {
+        other.setAttribute("aria-pressed", String(Number(other.dataset.depth) === depth));
+      }
+      draw();
+    });
+  }
+
+  document.getElementById("fit").addEventListener("click", () => fit());
+
+  document.getElementById("relayout").addEventListener("click", () => {
+    N.forEach((n, i) => {
+      const a = (i / Math.max(1, N.length)) * Math.PI * 2;
+      n.x = Math.cos(a) * RE * 0.55 + (Math.random() - .5) * 40;
+      n.y = Math.sin(a) * RE * 0.55 + (Math.random() - .5) * 40;
+      n.vx = n.vy = 0;
+      n.pinned = false;
+    });
+    alpha = 1;
+    paused = false;
+    document.getElementById("pause").setAttribute("aria-pressed", "false");
+    runSim(1, 2200);
+  });
+
+  const pauseBtn = document.getElementById("pause");
+  pauseBtn.addEventListener("click", () => {
+    paused = !paused;
+    pauseBtn.setAttribute("aria-pressed", String(paused));
+    if (!paused) runSim(0.35, 1400);
+  });
+
+  document.getElementById("png").addEventListener("click", () => {
+    const a = document.createElement("a");
+    a.download = "wiki-graph.png";
+    a.href = canvas.toDataURL("image/png");
+    a.click();
+  });
+
+  function updateStats() {
+    const shown = N.filter(n => !n.hidden).length;
+    const connections = EDGES.filter(e =>
+      !byId.get(e.a).hidden && !byId.get(e.b).hidden).length;
+    const directed = DATA.links.filter(l =>
+      !byId.get(l.s)?.hidden && !byId.get(l.t)?.hidden).length;
+    stats.textContent = `${shown} of ${N.length} pages · ${directed} links` +
+      (connections !== directed ? ` on ${connections} connections` : "") +
+      (DATA.counts.dangling ? ` · ${DATA.counts.dangling} dangling` : "") +
+      (DATA.counts.isolated ? ` · ${DATA.counts.isolated} unlinked` : "");
+  }
+
+  // ---- keyboard -----------------------------------------------------------
+  document.addEventListener("keydown", e => {
+    const typing = e.target instanceof HTMLInputElement;
+    if (e.key === "/" && !typing) {
+      e.preventDefault();
+      search.focus();
+      search.select();
+      return;
+    }
+    if (e.key === "Escape") {
+      if (typing) { search.value = ""; query = ""; closeResults(); }
+      select(null);
+      search.blur();
+      draw();
+      return;
+    }
+    if (typing) return;
+    if (e.key === "f") { e.preventDefault(); fit(); }
+    else if (e.key === "r") { e.preventDefault(); document.getElementById("relayout").click(); }
+    else if (e.key === "p") { e.preventDefault(); pauseBtn.click(); }
+  });
+
+  // ---- boot ---------------------------------------------------------------
+  window.addEventListener("resize", resize);
+  resize();
+  applyFilterState();
+
+  const fromHash = decodeURIComponent(location.hash.slice(1));
+  if (fromHash && byId.has(fromHash)) select(byId.get(fromHash));
+
+  // Collision needs time to separate a dense core: 2s left 5 touching pairs on a
+  // 315-page vault, and the correction is positional so extra ticks are cheap.
+  runSim(1, 3200);
+})();
+</script>
+</body>
+</html>

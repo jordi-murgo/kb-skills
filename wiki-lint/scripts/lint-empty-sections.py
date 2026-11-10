@@ -34,7 +34,7 @@ RULE = re.compile(r"^\s{0,3}([-*_])(\s*\1){2,}\s*$")
 
 # Navigation/derived pages: their headings are structure, not prose.
 NAV_BASENAMES = {"index.md", "hot.md", "log.md", "goals.md", "dashboard.md", "overview.md"}
-SKIP_TOP_LEVEL = {"meta", ".reciclaje"}
+SKIP_TOP_LEVEL = {"meta", ".reciclaje", "_templates"}
 
 
 def find_vault_root() -> Path:

@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Lifecycle audit for the wiki vault: status coverage, disputes, evidence.
+"""Lifecycle audit for maturity, verification, decisions, disputes, and evidence.
 
-Read-only. Scans wiki/**/*.md frontmatter and callouts, reports:
-  (a) content pages missing `status`
-  (b) dispute queue: pages with `status: disputed` or `> [!contradiction]` lines
-  (c) `status: verified` pages missing `evidence`
+Read-only. Scans wiki/**/*.md and reports missing universal fields, decision
+lifecycle gaps, disputed pages/callouts, and supported pages without evidence.
 
 Exit codes: 0 ok, 1 scan error, 2 usage error.
 """
@@ -64,6 +62,30 @@ def parse_frontmatter(text: str) -> dict[str, str]:
             fields[key.strip()] = value
     return fields
 
+def frontmatter_field_present(text: str, field: str) -> bool:
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return False
+    in_field = False
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        if not in_field:
+            key, _, value = line.partition(":")
+            if key.strip() != field:
+                continue
+            if value.strip().strip("'\""):
+                return True
+            in_field = True
+            continue
+        if line.startswith((" ", "\t")):
+            if line.strip().startswith("-") and line.strip()[1:].strip().strip("'\""):
+                return True
+            continue
+        if line.strip():
+            in_field = False
+    return False
+
 
 def iter_pages():
     for path in sorted(WIKI.rglob("*.md")):
@@ -73,7 +95,9 @@ def iter_pages():
 
 
 def audit() -> dict:
-    missing_status: list[dict] = []
+    missing_maturity: list[dict] = []
+    missing_verification: list[dict] = []
+    missing_decision_status: list[dict] = []
     disputes: list[dict] = []
     missing_evidence: list[dict] = []
     pages = 0
@@ -84,21 +108,28 @@ def audit() -> dict:
         rel = path.relative_to(VAULT).as_posix()
         if meta.get("type", "").lower() == "meta":
             continue
-        status = meta.get("status", "")
-        if not status:
-            missing_status.append({"page": rel})
-        if status.lower() == "disputed":
-            disputes.append({"page": rel, "line": 0, "reason": "status: disputed"})
+        maturity = meta.get("maturity", "")
+        verification = meta.get("verification", "")
+        if not maturity:
+            missing_maturity.append({"page": rel})
+        if not verification:
+            missing_verification.append({"page": rel})
+        if meta.get("type", "").lower() == "decision" and not meta.get("decision_status", ""):
+            missing_decision_status.append({"page": rel})
+        if verification.lower() == "disputed":
+            disputes.append({"page": rel, "line": 0, "reason": "verification: disputed"})
         for lineno, line in enumerate(text.splitlines(), start=1):
             if "[!contradiction]" in line:
                 disputes.append({"page": rel, "line": lineno, "reason": line.strip()[:120]})
-        if status.lower() == "verified" and not meta.get("evidence", "").strip():
+        if verification.lower() == "supported" and not frontmatter_field_present(text, "evidence"):
             missing_evidence.append({"page": rel})
     return {
         "pages_scanned": pages,
-        "missing_status": missing_status,
+        "missing_maturity": missing_maturity,
+        "missing_verification": missing_verification,
+        "missing_decision_status": missing_decision_status,
         "disputes": disputes,
-        "verified_missing_evidence": missing_evidence,
+        "supported_missing_evidence": missing_evidence,
     }
 
 
@@ -118,15 +149,21 @@ def main(argv=None) -> int:
         print(json.dumps(report, ensure_ascii=False, indent=1))
         return 0
     print(f"pages scanned: {report['pages_scanned']}")
-    print(f"content pages missing status: {len(report['missing_status'])}")
-    for item in report["missing_status"]:
+    print(f"content pages missing maturity: {len(report['missing_maturity'])}")
+    for item in report["missing_maturity"]:
+        print(f"  {item['page']}")
+    print(f"content pages missing verification: {len(report['missing_verification'])}")
+    for item in report["missing_verification"]:
+        print(f"  {item['page']}")
+    print(f"decisions missing decision_status: {len(report['missing_decision_status'])}")
+    for item in report["missing_decision_status"]:
         print(f"  {item['page']}")
     print(f"dispute queue: {len(report['disputes'])}")
     for item in report["disputes"]:
         where = f"{item['page']}:{item['line']}" if item["line"] else item["page"]
         print(f"  {where}  {item['reason']}")
-    print(f"verified pages missing evidence: {len(report['verified_missing_evidence'])}")
-    for item in report["verified_missing_evidence"]:
+    print(f"supported pages missing evidence: {len(report['supported_missing_evidence'])}")
+    for item in report["supported_missing_evidence"]:
         print(f"  {item['page']}")
     return 0
 

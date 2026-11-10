@@ -22,7 +22,8 @@ tags:
   - meta
   - fold
   - "fold/k{K}"
-status: mature
+maturity: mature
+verification: supported
 children:
   - date: "{YYYY-MM-DD}"
     op: "{save|ingest|fold|session|setup|decision}"

@@ -22,14 +22,17 @@ The key difference from RAG: the wiki is a persistent artifact. Cross-references
 
 ## Architecture
 
-Three layers:
+Four layers with explicit epistemic boundaries:
 
 ```
 vault/
-├── .raw/       # Layer 1: immutable source documents
-├── wiki/       # Layer 2: LLM-generated knowledge base
-└── AGENTS.md   # Layer 3: project schema and content-maintenance instructions
+├── .raw/                         # immutable source evidence
+├── .cache/knowledge-flow/        # reconstructible observations/candidates
+├── wiki/                         # consolidated canonical knowledge
+└── AGENTS.md                     # project schema and maintenance rules
 ```
+
+Recent observations are searchable but provisional. Canonical pages change only through consolidation; deleting `.cache/knowledge-flow/` is safe because raw evidence can reconstruct it.
 
 Standard wiki structure:
 
@@ -41,10 +44,10 @@ wiki/
 ├── overview.md         # executive summary of the whole wiki
 ├── goals.md            # approved outcomes and observable success criteria
 ├── dashboard.md        # goal-driven project state and blockers
-├── sources/            # one summary page per raw source
-├── entities/           # people, orgs, products, repos
+├── sources/            # reusable source artifacts, not one page per raw file
+├── entities/           # entities that own standalone durable knowledge
 │   └── _index.md
-├── concepts/           # ideas, patterns, frameworks
+├── concepts/           # durable ideas, patterns, frameworks
 │   └── _index.md
 ├── domains/            # top-level topic areas
 │   └── _index.md
@@ -71,7 +74,7 @@ Format:
 ---
 type: meta
 title: "Hot Cache"
-updated: YYYY-MM-DDTHH:MM:SS
+updated: YYYY-MM-DD
 ---
 
 # Recent Context
@@ -113,6 +116,7 @@ Route to the correct operation based on what the user says:
 | "lint", "health check", "clean up" | LINT | `wiki-lint` |
 | "save this", "file this", "/save" | SAVE | `save` |
 | "/autoresearch [topic]", "research [topic]" | AUTORESEARCH | `autoresearch` |
+| "consolidate", "promote candidates", "expire recent" | CONSOLIDATE | `wiki-consolidate` |
 
 ---
 
@@ -127,7 +131,7 @@ Steps:
 3. Create full folder structure under `wiki/` based on the mode.
 4. Create domain pages + `_index.md` sub-indexes.
 5. Create `wiki/index.md`, `wiki/log.md`, `wiki/hot.md`, `wiki/overview.md`, `wiki/goals.md`, `wiki/dashboard.md` — read [Project state](references/project-state.md), bootstrap only missing files, do not invent goals.
-6. Create `_templates/` files for each note type.
+6. Create `wiki/_templates/` files for each note type (and optional `.obsidian/types.json` if the vault is opened in Obsidian) — read [Templates & Property Types](references/templates.md).
 7. Merge the project AGENTS.md using the template below; preserve existing rules. If CLAUDE.md exists, keep a single pointer to AGENTS.md rather than duplicating policy.
 8. Initialize git. Read `references/git-setup.md`.
 9. Present the structure and ask: "Want to adjust anything before we start?"
@@ -150,13 +154,13 @@ Created: YYYY-MM-DD
 
 ## Conventions
 
-- All notes use YAML frontmatter: type, status, created, updated, tags (minimum)
-- Wikilinks use [[Note Name]] format: filenames are unique, no paths needed
-- .raw/ contains source documents: never modify them
-- wiki/index.md is the master catalog: update on every ingest
-- wiki/log.md is append-only: never edit past entries
-- New log entries go at the TOP of the file
-- wiki/goals.md is the authoritative outcome register (ID, intended outcome, success criteria, authority, priority, owner/time, scope); wiki/dashboard.md records evidence-backed status/gap/next step per goal; wiki/hot.md stays <=500 words; one top log entry per actual content batch with no duplication on no-op batches — detailed schema in [Project state](references/project-state.md)
+- All notes use YAML frontmatter: `type`, `maturity`, `verification`, `created`, `updated`, `tags` (minimum); decisions also use `decision_status`
+- `maturity` is completeness (`seed|developing|mature|evergreen`); `verification` is evidence state (`unreviewed|supported|disputed`)
+- Wikilinks use `[[Note Name]]` format: filenames are unique, no paths needed
+- `.raw/` is immutable evidence; `.cache/knowledge-flow/` is reconstructible provisional state
+- `wiki/index.md` catalogs final canonical pages only
+- `wiki/log.md` is append-only; new entries go at the top
+- `wiki/goals.md` is the authoritative outcome register; `wiki/dashboard.md` records evidence-backed status; `wiki/hot.md` stays <=500 words
 
 ## Operations
 

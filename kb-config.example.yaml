@@ -127,26 +127,25 @@ embeddings:
 #   vector_weight: 8
 #   bm25_weight: 1
 
+# --- observation/candidate knowledge flow ---
+# Derived, reconstructible ledgers written by wiki-ingest and read by wiki-search
+# / wiki-consolidate. Keep them under .cache; deleting the directory is safe.
+#knowledge_flow:
+#  dir: .cache/knowledge-flow
+
 # --- output trust (wiki-search) ---
-# An answer or summary an agent files back into the wiki is a CLAIM, not
-# knowledge, until its status says it was checked. Without this section every
-# page is indexed, which is the pre-trust behavior. With `output_types` set,
-# pages of those types are indexed only when their `status:` appears in
-# `indexed_status` (default: [verified]); everything else stays out of the
-# index and is reported as quarantined by `build` and `status`.
+# Self-authored answers/summaries are claims until evidence review. `maturity`
+# never opens this gate: only `verification` does. Without this section every
+# page is indexed. With `output_types`, those page types are indexed only when
+# `verification:` appears in `indexed_verification` (default: [supported]).
 #
-# Only the listed types are gated. A concept in `draft` is still indexed: the
-# gate is about self-authored output re-entering the retrieval corpus, not
-# about every page's maturity.
-#
-# `require_evidence: true` additionally withholds a page whose status already
-# qualifies but has no `evidence:` (scalar or list) — a `verified` page nobody
-# can check against anything. Off by default; run wiki-vetting's lifecycle
-# audit first to see how many pages would be affected.
+# Other page types are unaffected. `require_evidence: true` additionally holds
+# a qualifying page with no populated `evidence:` scalar/list. Run
+# wiki-vetting's lifecycle audit before enabling it.
 #
 #trust:
 #  output_types: [question, summary]
-#  indexed_status: [verified]
+#  indexed_verification: [supported]
 #  require_evidence: false
 
 code_search:

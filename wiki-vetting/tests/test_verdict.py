@@ -134,6 +134,62 @@ class VerdictTest(unittest.TestCase):
         self.assertIn("grounded", signal["undecided_axes"])
 
 
+class RoutingActionTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import os
+        import tempfile
+
+        cls.vault = Path(tempfile.mkdtemp(prefix="vet-routing-"))
+        (cls.vault / "wiki").mkdir()
+        (cls.vault / ".git").mkdir()
+        (cls.vault / "kb-config.yaml").write_text("decisions:\n  model: test\n", encoding="utf-8")
+        cls._cwd = Path.cwd()
+        os.chdir(cls.vault)
+        cls.mod = load_module()
+
+    @classmethod
+    def tearDownClass(cls):
+        import os
+        import shutil
+
+        os.chdir(cls._cwd)
+        shutil.rmtree(cls.vault, ignore_errors=True)
+
+    def route(self, probs, *, skip_grounded=False):
+        verdict, bits, signal = self.mod.verdict_for(probs, skip_grounded=skip_grounded)
+        return self.mod.routing_action(verdict, bits, signal)
+
+    def test_sensitive_claim_is_rejected_explicitly(self):
+        probs = {"grounded": 0.99, "durable": 0.95, "duplicate": 0.0, "sensitive": 0.35}
+        self.assertEqual(self.route(probs), "reject_sensitive")
+
+    def test_ungrounded_claim_is_rejected_explicitly(self):
+        probs = {"grounded": 0.2, "durable": 0.95, "duplicate": 0.0, "sensitive": 0.0}
+        self.assertEqual(self.route(probs), "reject_ungrounded")
+
+    def test_ephemeral_claim_stays_recent_only(self):
+        probs = {"grounded": 0.99, "durable": 0.2, "duplicate": 0.0, "sensitive": 0.0}
+        self.assertEqual(self.route(probs), "recent_only")
+
+    def test_duplicate_durable_claim_routes_to_merge_or_noop(self):
+        probs = {"grounded": 0.99, "durable": 0.95, "duplicate": 0.95, "sensitive": 0.0}
+        self.assertEqual(self.route(probs), "merge_or_noop")
+
+    def test_novel_durable_claim_routes_to_promotion(self):
+        probs = {"grounded": 0.99, "durable": 0.95, "duplicate": 0.0, "sensitive": 0.0}
+        self.assertEqual(self.route(probs), "promote_candidate")
+
+    def test_uncertain_axis_requires_human_review(self):
+        probs = {
+            "grounded": self.mod.DEFAULT_THRESHOLDS["grounded"] - 0.01,
+            "durable": 0.95,
+            "duplicate": 0.0,
+            "sensitive": 0.0,
+        }
+        self.assertEqual(self.route(probs), "human_review")
+
+
 class CalibrationSetTest(unittest.TestCase):
     def test_set_is_balanced_and_labelled(self):
         rows = json.loads(

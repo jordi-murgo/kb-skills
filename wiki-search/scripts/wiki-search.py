@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
-"""wiki_search.py — local hybrid (BM25 + vector + RRF) search over the wiki vault.
+"""wiki_search.py — canonical hybrid search plus immediate recent observations.
 
 Subcommands:
-  build          index configured Markdown source directories into .cache/wiki-search/index.db
-                 (incremental)
-  query TEXT     search the index; --mode hybrid|bm25|vector, --top N, --json
+  build          index configured canonical Markdown sources incrementally
+  query TEXT     search --scope canonical|recent|all; canonical supports
+                 --mode hybrid|bm25|vector, recent uses in-memory BM25
   status         index stats and stale pages
-  eval GOLD.json score retrieval (hit/recall/precision/nDCG@k, MRR, latency) against a
-                 human-authored gold query set; repeat --mode to compare modes
+  eval GOLD.json score canonical retrieval against a human-authored gold set
 
-Fully local: BM25 via sqlite FTS5 (own inverted-index fallback when FTS5 is
-unavailable), embeddings via the local Ollama /api/embed endpoint.
+Canonical BM25 uses SQLite FTS5 (own fallback); embeddings use an
+Ollama-compatible /api/embed endpoint. Recent scope reads append-only JSONL and
+ranks in memory, so new sourced observations are searchable before promotion or
+an index rebuild.
 
-Config: the `embeddings` section of kb-config.yaml at the vault root (model,
-endpoint base URL with /api/embed appended, db path relative to the root, and
-`source_dirs` relative to the root). Values support ${VAR} / ${VAR:-default}
-macros expanded from the environment (process env, then vault-root .env /
-.env.local). Without config everything targets a local Ollama on 127.0.0.1:11434
-and indexes `wiki/`. WIKI_SEM_NO_FTS5=1 forces the fallback inverted index.
+Config: `embeddings` plus `wiki_search` set the canonical model, endpoint, db,
+and source_dirs. `knowledge_flow.dir` sets the recent ledger directory. Values
+support ${VAR} / ${VAR:-default} macros expanded from the environment. Defaults:
+local Ollama at 127.0.0.1:11434, canonical `wiki/`, recent
+`.cache/knowledge-flow/`.
 """
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 import math
@@ -34,6 +35,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from html import escape as html_escape
 from pathlib import Path
 
 def find_vault_root() -> Path:
@@ -311,27 +313,17 @@ def frontmatter_field_present(text: str, field: str) -> bool:
 
 
 def quarantine_reason(text: str) -> str | None:
-    """Why this page must stay out of the index, or None to index it.
-
-    Only configured output types are gated: a page an agent filed back into the
-    wiki (an answer, a summary) is a claim, not knowledge, until its status says
-    it was checked. Pages of any other type are never affected, whatever their
-    status. With no `trust.output_types` configured this is always None, which
-    is the pre-trust behavior.
-    """
+    """Why a configured output page must stay out of canonical retrieval."""
     if not OUTPUT_TYPES:
         return None
     page_type = (frontmatter_scalar(text, "type") or "").lower()
     if page_type not in OUTPUT_TYPES:
         return None
-    status = (frontmatter_scalar(text, "status") or "").lower()
-    if status not in INDEXED_STATUSES:
-        return status or "(no status)"
+    verification = (frontmatter_scalar(text, "verification") or "").lower()
+    if verification not in INDEXED_VERIFICATIONS:
+        return verification or "(no verification)"
     if REQUIRE_EVIDENCE and not frontmatter_field_present(text, "evidence"):
-        # `verified` is a promise that someone checked it. Without a pointer to
-        # what they checked against, the promise is unverifiable, and the page
-        # would be cited by the next answer exactly like a sourced one.
-        return f"{status} without evidence"
+        return f"{verification} without evidence"
     return None
 
 
@@ -348,7 +340,7 @@ def collect_sources() -> tuple[dict[str, Path], list[dict]]:
             text = path.read_text(encoding="utf-8", errors="replace")
             reason = quarantine_reason(text)
             if reason is not None:
-                quarantined.append({"page": relpath, "status": reason})
+                quarantined.append({"page": relpath, "verification": reason})
                 continue
         indexed[relpath] = path
     return indexed, quarantined
@@ -370,6 +362,7 @@ _CFG = load_config_section(VAULT_ROOT, "embeddings")
 # `code_search` is the symmetric section for the other search; neither leaks
 # into the other.
 _SEARCH = load_config_section(VAULT_ROOT, "wiki_search")
+_FLOW = load_config_section(VAULT_ROOT, "knowledge_flow")
 
 
 def _merged(key, default=None):
@@ -394,25 +387,29 @@ if not isinstance(_raw_prefix, str):
     raise SystemExit("kb-config wiki_search.query_prefix must be a string")
 QUERY_PREFIX = _raw_prefix
 DB_PATH = DEFAULT_DB
+_flow_dir = _FLOW.get("dir") or ".cache/knowledge-flow"
+if not isinstance(_flow_dir, str) or not _flow_dir.strip():
+    raise SystemExit("kb-config knowledge_flow.dir must be a non-empty path string")
+FLOW_DIR = vault_path(VAULT_ROOT, _flow_dir, "knowledge_flow.dir")
+OBSERVATIONS_PATH = FLOW_DIR / "observations.jsonl"
+CANDIDATES_PATH = FLOW_DIR / "candidates.jsonl"
 
-# Output trust: an answer or summary an agent files back into the wiki is a
-# claim, not knowledge, until its status says it was checked. Without config
-# nothing is gated; with `trust.output_types` set, pages of those types are
-# indexed only when their status is in `trust.indexed_status`.
+# Output trust gates self-authored output by verification, independently from
+# page maturity. Without config, no page type is gated.
 _TRUST = load_config_section(VAULT_ROOT, "trust")
 _raw_types = _TRUST.get("output_types") or []
 if not isinstance(_raw_types, list) or not all(isinstance(t, str) and t.strip() for t in _raw_types):
     raise SystemExit("kb-config trust.output_types must be a list of page types")
 OUTPUT_TYPES = {t.strip().lower() for t in _raw_types}
-_raw_statuses = _TRUST.get("indexed_status") or ["verified"]
-if not isinstance(_raw_statuses, list) or not all(isinstance(s, str) and s.strip() for s in _raw_statuses):
-    raise SystemExit("kb-config trust.indexed_status must be a list of statuses")
-INDEXED_STATUSES = {s.strip().lower() for s in _raw_statuses}
+_raw_verifications = _TRUST.get("indexed_verification") or ["supported"]
+if not isinstance(_raw_verifications, list) or not all(
+    isinstance(value, str) and value.strip() for value in _raw_verifications
+):
+    raise SystemExit("kb-config trust.indexed_verification must be a list")
+INDEXED_VERIFICATIONS = {value.strip().lower() for value in _raw_verifications}
 _raw_require_evidence = _TRUST.get("require_evidence", False)
 if not isinstance(_raw_require_evidence, bool):
     raise SystemExit("kb-config trust.require_evidence must be true or false")
-# `verified` without `evidence:` is a promise nobody can check. Off by default
-# so a vault that has not adopted the field keeps indexing as before.
 REQUIRE_EVIDENCE = _raw_require_evidence
 
 EMBED_BATCH = 32
@@ -831,6 +828,145 @@ def snippet(text, width=240):
     flat = re.sub(r"\s+", " ", text).strip()
     return flat[:width] + ("…" if len(flat) > width else "")
 
+def load_jsonl_latest(path, id_field):
+    """Load append-only JSONL and retain the last row for each stable id."""
+    if not path.is_file():
+        return {}
+    latest = {}
+    with path.open(encoding="utf-8") as source:
+        for line_number, raw in enumerate(source, 1):
+            if not raw.strip():
+                continue
+            try:
+                row = json.loads(raw)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"{path}:{line_number}: invalid JSON: {error.msg}") from error
+            if not isinstance(row, dict):
+                raise ValueError(f"{path}:{line_number}: expected a JSON object")
+            stable_id = row.get(id_field)
+            if not isinstance(stable_id, str) or not stable_id:
+                raise ValueError(f"{path}:{line_number}: missing {id_field}")
+            row = dict(row)
+            row["_ledger_seq"] = line_number
+            latest[stable_id] = row
+    return latest
+
+
+def recent_documents(today=None):
+    """Return active provisional observations enriched with latest candidate state."""
+    today = today or datetime.now(timezone.utc).date().isoformat()
+    observations = load_jsonl_latest(OBSERVATIONS_PATH, "observation_id")
+    candidates = load_jsonl_latest(CANDIDATES_PATH, "candidate_id")
+    by_observation = {}
+    for candidate in candidates.values():
+        observation_ids = candidate.get("observation_ids") or []
+        if not isinstance(observation_ids, list):
+            continue
+        decision_key = (str(candidate.get("decided_at") or ""), candidate["_ledger_seq"])
+        for observation_id in observation_ids:
+            current = by_observation.get(observation_id)
+            if current is None or decision_key > current[0]:
+                by_observation[observation_id] = (decision_key, candidate)
+
+    documents = []
+    for observation in observations.values():
+        if observation.get("epistemic_status", "observed") != "observed":
+            continue
+        valid_to = observation.get("valid_to")
+        if isinstance(valid_to, str) and valid_to and valid_to < today:
+            continue
+        observation_id = observation["observation_id"]
+        candidate_entry = by_observation.get(observation_id)
+        candidate = candidate_entry[1] if candidate_entry else {}
+        action = candidate.get("action") or "unclassified"
+        candidate_status = candidate.get("status") or "pending"
+        if candidate_status in {"expired", "rejected"}:
+            continue
+        if candidate_status == "applied" and action != "hold_dispute":
+            continue
+        claim = str(observation.get("claim") or "").strip()
+        quote = str(observation.get("quote") or "").strip()
+        if not claim:
+            continue
+        search_text = " ".join(
+            part for part in (
+                claim,
+                quote,
+                candidate.get("reason"),
+                " ".join(candidate.get("matched_pages") or []),
+            ) if isinstance(part, str)
+        )
+        documents.append(
+            {
+                "observation_id": observation_id,
+                "candidate_id": candidate.get("candidate_id"),
+                "claim": claim,
+                "quote": quote,
+                "source_path": observation.get("source_path"),
+                "source_lines": observation.get("source_lines"),
+                "observed_at": observation.get("observed_at"),
+                "valid_from": observation.get("valid_from"),
+                "valid_to": valid_to,
+                "relation": candidate.get("relation") or "unclassified",
+                "action": action,
+                "candidate_status": candidate_status,
+                "matched_pages": candidate.get("matched_pages") or [],
+                "_search_text": search_text,
+            }
+        )
+    return documents
+
+
+def search_recent(qtext, limit):
+    """Rank active observations with in-memory BM25; no embedding/build delay."""
+    query_tokens = list(dict.fromkeys(TOKEN_RE.findall(qtext.lower())))
+    if not query_tokens:
+        return []
+    documents = recent_documents()
+    if not documents:
+        return []
+    token_counts = [Counter(TOKEN_RE.findall(doc["_search_text"].lower())) for doc in documents]
+    lengths = [sum(counts.values()) for counts in token_counts]
+    average_length = sum(lengths) / len(lengths) or 1.0
+    frequencies = {
+        token: sum(1 for counts in token_counts if token in counts)
+        for token in query_tokens
+    }
+    ranked = []
+    total = len(documents)
+    for document, counts, length in zip(documents, token_counts, lengths):
+        score = 0.0
+        for token in query_tokens:
+            frequency = counts.get(token, 0)
+            if not frequency:
+                continue
+            document_frequency = frequencies[token]
+            inverse_frequency = math.log(1 + (total - document_frequency + 0.5) / (document_frequency + 0.5))
+            denominator = frequency + BM25_K1 * (1 - BM25_B + BM25_B * length / average_length)
+            score += inverse_frequency * frequency * (BM25_K1 + 1) / denominator
+        if score:
+            ranked.append((score, document))
+    ranked.sort(
+        key=lambda item: (
+            -item[0],
+            str(item[1].get("observed_at") or ""),
+            item[1]["observation_id"],
+        )
+    )
+    results = []
+    for rank, (score, document) in enumerate(ranked[:limit], 1):
+        item = {key: value for key, value in document.items() if not key.startswith("_")}
+        item.update(
+            {
+                "rank": rank,
+                "score": round(score, 6),
+                "snippet": snippet(document["quote"] or document["claim"]),
+                "provisional": True,
+            }
+        )
+        results.append(item)
+    return results
+
 
 # ---------------------------------------------------------------- commands
 
@@ -1025,9 +1161,9 @@ def cmd_build(args):
         print(f"sources: {', '.join(configured_source_dirs())}")
         if quarantined:
             print(f"quarantined: {len(quarantined)} output page(s) not indexed"
-                  f" (status not in {sorted(INDEXED_STATUSES)})")
+                  f" (verification not in {sorted(INDEXED_VERIFICATIONS)})")
             for item in quarantined:
-                print(f"  held: {item['page']} (status: {item['status']})")
+                print(f"  held: {item['page']} (verification: {item['verification']})")
     return 0
 
 
@@ -1071,91 +1207,180 @@ def rank_chunks(conn, backend, qtext, mode, model, dims):
     return ranked, bm25_list, vec_list, effective, notes
 
 
-def cmd_query(args):
-    if not DB_PATH.exists():
-        print(f"error: no index at {DB_PATH}; run 'build' first", file=sys.stderr)
-        return 1
+def query_canonical(args, qtext):
+    """Run the existing indexed query and always close its read connection."""
     conn = connect_readonly()
-    backend = get_meta(conn, "bm25_backend") or "fts5"
-    index_model = get_meta(conn, "model") or DEFAULT_MODEL
-    dims = get_meta(conn, "dims")
-    if isinstance(dims, str):
-        dims = int(dims)
-    model = args.model or index_model
-    if args.model and args.model != index_model:
-        print(
-            f"warning: query model {args.model} != index model {index_model};"
-            " cosine scores may be meaningless",
-            file=sys.stderr,
-        )
-
-    qtext = args.text.strip()
     try:
+        backend = get_meta(conn, "bm25_backend") or "fts5"
+        index_model = get_meta(conn, "model") or DEFAULT_MODEL
+        dims = get_meta(conn, "dims")
+        if isinstance(dims, str):
+            dims = int(dims)
+        model = args.model or index_model
+        warnings = []
+        if args.model and args.model != index_model:
+            warnings.append(
+                f"query model {args.model} != index model {index_model}; cosine scores may be meaningless"
+            )
         ranked, bm25_list, vec_list, effective, notes = rank_chunks(
             conn, backend, qtext, args.mode, model, dims
         )
-    except RuntimeError as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 1
-    for note in notes:
-        print(f"note: {note}", file=sys.stderr)
-    ranked = ranked[: args.top]
-
-    bm25_map = rank_map(bm25_list)
-    vec_map = rank_map(vec_list)
-    results = []
-    if ranked:
-        cids = [cid for cid, _ in ranked]
-        qmarks = ",".join("?" * len(cids))
-        rows = {
-            r[0]: r
-            for r in conn.execute(
-                f"SELECT id, path, heading, seq, text FROM chunks WHERE id IN ({qmarks})",
-                cids,
-            )
-        }
-        for rank, (cid, score) in enumerate(ranked, 1):
-            _, path, heading, seq, text = rows[cid]
-            item = {
-                "rank": rank,
-                "score": round(score, 6),
-                "page": path,
-                "heading": heading,
-                "seq": seq,
-                "snippet": snippet(text),
+        ranked = ranked[: args.top]
+        bm25_map = rank_map(bm25_list)
+        vec_map = rank_map(vec_list)
+        results = []
+        if ranked:
+            chunk_ids = [chunk_id for chunk_id, _ in ranked]
+            qmarks = ",".join("?" * len(chunk_ids))
+            rows = {
+                row[0]: row
+                for row in conn.execute(
+                    f"SELECT id, path, heading, seq, text FROM chunks WHERE id IN ({qmarks})",
+                    chunk_ids,
+                )
             }
-            if cid in bm25_map:
-                item["bm25_rank"] = bm25_map[cid][0]
-                item["bm25_score"] = round(bm25_map[cid][1], 4)
-            if cid in vec_map:
-                item["vector_rank"] = vec_map[cid][0]
-                item["cosine"] = round(vec_map[cid][1], 4)
-            results.append(item)
-    conn.close()
+            for rank, (chunk_id, score) in enumerate(ranked, 1):
+                _, path, heading, seq, text = rows[chunk_id]
+                item = {
+                    "rank": rank,
+                    "score": round(score, 6),
+                    "page": path,
+                    "heading": heading,
+                    "seq": seq,
+                    "snippet": snippet(text),
+                }
+                if chunk_id in bm25_map:
+                    item["bm25_rank"] = bm25_map[chunk_id][0]
+                    item["bm25_score"] = round(bm25_map[chunk_id][1], 4)
+                if chunk_id in vec_map:
+                    item["vector_rank"] = vec_map[chunk_id][0]
+                    item["cosine"] = round(vec_map[chunk_id][1], 4)
+                results.append(item)
+        return {
+            "available": True,
+            "mode": args.mode,
+            "effective_mode": effective,
+            "model": model,
+            "n_results": len(results),
+            "results": results,
+            "notes": notes,
+            "warnings": warnings,
+        }
+    finally:
+        conn.close()
 
-    payload = {
-        "query": qtext,
-        "mode": args.mode,
-        "effective_mode": effective,
-        "model": model,
-        "top": args.top,
-        "n_results": len(results),
-        "results": results,
-    }
+
+def print_canonical_results(results):
+    if not results:
+        print("no results")
+        return
+    for item in results:
+        tags = []
+        if "bm25_rank" in item:
+            tags.append(f"bm25#{item['bm25_rank']}")
+        if "vector_rank" in item:
+            tags.append(f"vec#{item['vector_rank']}")
+        tag = ("  [" + " ".join(tags) + "]") if tags else ""
+        print(f"{item['rank']}. {item['page']} — {item['heading']}  (score {item['score']}){tag}")
+        print(f"   {item['snippet']}")
+
+
+def print_recent_results(results):
+    if not results:
+        print("no results")
+        return
+    for item in results:
+        source = item.get("source_path") or "unknown source"
+        if item.get("source_lines"):
+            source += f":{item['source_lines']}"
+        print(
+            f"{item['rank']}. [PROVISIONAL] {item['claim']} "
+            f"(score {item['score']}; action {item['action']}; {source})"
+        )
+        print(f"   {item['snippet']}")
+
+
+def cmd_query(args):
+    qtext = args.text.strip()
+    canonical = None
+    if args.scope in {"canonical", "all"}:
+        if not DB_PATH.exists():
+            if args.scope == "canonical":
+                print(f"error: no index at {DB_PATH}; run 'build' first", file=sys.stderr)
+                return 1
+            canonical = {
+                "available": False,
+                "mode": args.mode,
+                "effective_mode": None,
+                "model": None,
+                "n_results": 0,
+                "results": [],
+                "notes": [f"canonical index unavailable at {DB_PATH}"],
+                "warnings": [],
+            }
+        else:
+            try:
+                canonical = query_canonical(args, qtext)
+            except RuntimeError as error:
+                print(f"error: {error}", file=sys.stderr)
+                return 1
+        for warning in canonical["warnings"]:
+            print(f"warning: {warning}", file=sys.stderr)
+        for note in canonical["notes"]:
+            print(f"note: {note}", file=sys.stderr)
+
+    recent_results = []
+    if args.scope in {"recent", "all"}:
+        try:
+            recent_results = search_recent(qtext, args.top)
+        except (OSError, ValueError) as error:
+            print(f"error: recent knowledge ledger: {error}", file=sys.stderr)
+            return 1
+
+    if args.scope == "canonical":
+        payload = {
+            "query": qtext,
+            "scope": "canonical",
+            "mode": canonical["mode"],
+            "effective_mode": canonical["effective_mode"],
+            "model": canonical["model"],
+            "top": args.top,
+            "n_results": canonical["n_results"],
+            "results": canonical["results"],
+        }
+    elif args.scope == "recent":
+        payload = {
+            "query": qtext,
+            "scope": "recent",
+            "mode": "bm25",
+            "top": args.top,
+            "n_results": len(recent_results),
+            "results": recent_results,
+        }
+    else:
+        payload = {
+            "query": qtext,
+            "scope": "all",
+            "top": args.top,
+            "canonical": {key: value for key, value in canonical.items() if key not in {"notes", "warnings"}},
+            "recent": {
+                "mode": "bm25",
+                "n_results": len(recent_results),
+                "results": recent_results,
+            },
+        }
+
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+    elif args.scope == "canonical":
+        print_canonical_results(canonical["results"])
+    elif args.scope == "recent":
+        print_recent_results(recent_results)
     else:
-        if not results:
-            print("no results")
-        for item in results:
-            tags = []
-            if "bm25_rank" in item:
-                tags.append(f"bm25#{item['bm25_rank']}")
-            if "vector_rank" in item:
-                tags.append(f"vec#{item['vector_rank']}")
-            tag = ("  [" + " ".join(tags) + "]") if tags else ""
-            print(f"{item['rank']}. {item['page']} — {item['heading']}  (score {item['score']}){tag}")
-            print(f"   {item['snippet']}")
+        print("Canonical knowledge")
+        print_canonical_results(canonical["results"])
+        print("\nRecent provisional information")
+        print_recent_results(recent_results)
     return 0
 
 
@@ -1322,6 +1547,8 @@ def cmd_graph(args):
     if not DB_PATH.exists():
         print(f"error: no index at {DB_PATH}; run 'build' first", file=sys.stderr)
         return 1
+    if getattr(args, "html", None) is not None:
+        return cmd_graph_html(args)
     conn = connect_readonly()
     if args.page:
         rows = conn.execute(
@@ -1450,6 +1677,138 @@ def cmd_eval(args):
     return 0
 
 
+# The view is a sibling asset, not a Python literal: 900 lines of HTML/CSS/JS
+# inside a string is unreadable, unlintable and easy to break with a stray quote.
+GRAPH_VIEW = Path(__file__).resolve().parent / "graph-view.html"
+
+
+def cmd_graph_html(args):
+    """Write a self-contained HTML view of the body-wikilink graph.
+
+    No CDN, no build step, no external font: one file that opens offline. Derived
+    state, so it belongs under `.cache/` like the index itself.
+    """
+    if not DB_PATH.exists():
+        print(f"error: no index at {DB_PATH}; run 'build' first", file=sys.stderr)
+        return 1
+    # Read lazily: a vault that never asks for the view should still get the whole
+    # CLI when one asset is missing from the installed copy.
+    try:
+        template = GRAPH_VIEW.read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"error: cannot read the graph view asset: {e}", file=sys.stderr)
+        return 1
+
+    conn = connect_readonly()
+    rows = conn.execute("SELECT src, dst FROM links").fetchall()
+
+    # Page metadata: type from frontmatter, title from the H1, path for the open
+    # link. Read from disk rather than the index because the index stores the
+    # stem (the node id) but not the H1 or the declared page type.
+    meta = {}
+    for (relpath,) in conn.execute("SELECT path FROM pages"):
+        try:
+            text = (VAULT_ROOT / relpath).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        meta[page_key(relpath)] = {
+            "id": page_key(relpath),
+            "title": page_title(relpath, text),
+            "type": (frontmatter_scalar(text, "type") or "unknown").strip(),
+            "path": relpath,
+            "href": Path(relpath).as_posix(),
+        }
+
+    degree = {k: 0 for k in meta}
+    edges = []
+    for src, dst in rows:
+        edges.append((src, dst))
+        degree[src] = degree.get(src, 0) + 1
+        # A dangling target still gets a node: it is a writer's intent that
+        # never landed, and hiding it is how a vault grows invisible holes.
+        if dst in degree:
+            degree[dst] += 1
+        else:
+            degree[dst] = 1
+
+    if not edges:
+        print(
+            "error: no links in the index; run 'build' first "
+            "(a pre-`links` index backfills on the next build)",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Truncating by degree would silently hide the long tail, which is most of a
+    # vault. Only truncate when the graph is too large for a browser, and say so
+    # in the page when it happens.
+    keep = sorted(degree, key=lambda k: (-degree[k], k))[: args.max_nodes]
+    kept = set(keep)
+    truncated = len(keep) < len(degree)
+
+    # Files are relative to the vault root, and the HTML normally lands in
+    # `.cache/`; a `file:` link has to climb out of there. `--html` is a CLI
+    # argument, not a config value, so an absolute path or `~` is honoured as
+    # written instead of being rejected by the config-path guard.
+    target = args.html or ".cache/wiki-graph.html"
+    target = Path(target).expanduser()
+    out = target if target.is_absolute() else VAULT_ROOT / target
+    prefix = os.path.relpath(VAULT_ROOT.resolve(), out.parent.resolve())
+    prefix = prefix.replace(os.sep, "/")
+    href_prefix = "" if prefix == "." else prefix + "/"
+
+    nodes = []
+    for key in keep:
+        page = meta.get(key)
+        if page is None:
+            nodes.append({"id": key, "title": key, "type": "missing", "path": "",
+                          "href": "", "dangling": True})
+        else:
+            nodes.append({**page, "href": href_prefix + page["href"], "dangling": False})
+
+    links = [{"s": s, "t": d} for s, d in edges if s in kept and d in kept]
+
+    types = {}
+    palette = [f"c{i}" for i in range(1, 13)]
+    for k in sorted({n["type"] for n in nodes}):
+        types[k] = {"label": k, "color": palette[len(types) % len(palette)]}
+
+    data = {
+        "nodes": nodes,
+        "links": links,
+        "types": types,
+        "truncated": truncated,
+        "counts": {
+            "edges": len(edges),
+            "dangling": sum(1 for n in nodes if n["dangling"]),
+            "isolated": sum(1 for n in nodes if not degree[n["id"]]),
+        },
+    }
+    subtitle = (
+        f"{len(nodes)} pages · {len(links)} body wikilinks"
+        f" · {data['counts']['dangling']} dangling targets"
+    )
+    # Node ids are page stems: `wiki/x/bi2614-1.md` and `.raw/jira/BI2614-1.md`
+    # collapse into one node. Say so rather than let the totals look arbitrary.
+    if len(meta) > len(nodes):
+        subtitle += f" · {len(meta)} indexed files → {len(nodes)} nodes"
+    page = (
+        template
+        .replace("__TITLE__", html_escape(str(VAULT_ROOT.name)) + " · page graph")
+        .replace("__SUBTITLE__", html_escape(subtitle))
+        # `</` would close the <script> element early; escaping it is the only
+        # substitution that is mandatory here.
+        .replace("__DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/"))
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(page, encoding="utf-8")
+    print(f"graph: {len(nodes)} pages, {len(links)} edges -> {out} ({len(page) / 1024:.0f} KB)")
+    if truncated:
+        print(f"note: truncated to the {args.max_nodes} highest-degree pages"
+              f" (of {len(degree)}); raise --max-nodes to include the rest")
+    return 0
+
+
 def cmd_status(args):
     if not DB_PATH.exists():
         msg = f"no index at {DB_PATH}; run 'build' first"
@@ -1475,13 +1834,13 @@ def cmd_status(args):
         for path, mtime, sha in conn.execute("SELECT path, mtime, sha256 FROM pages")
     }
     current, quarantined = collect_sources()
-    held = {item["page"]: item["status"] for item in quarantined}
+    held = {item["page"]: item["verification"] for item in quarantined}
     for relpath, (mtime, sha) in sorted(known.items()):
         f = current.get(relpath)
         if f is None:
             if relpath in held:
                 stale.append({"page": relpath, "reason": "quarantined",
-                              "status": held[relpath]})
+                              "verification": held[relpath]})
             else:
                 stale.append({"page": relpath, "reason": "deleted"})
             continue
@@ -1517,16 +1876,19 @@ def cmd_status(args):
         print(f"pages: {n_pages}  chunks: {n_chunks}  embedded: {n_embedded}")
         print(f"stale: {len(stale)}  new: {len(new_pages)}")
         print(f"sources: {', '.join(configured_source_dirs())}")
-        for s in stale:
-            detail = f" ({s['reason']}"
-            detail += f", status: {s['status']})" if s.get("status") else ")"
-            print(f"  stale: {s['page']}{detail}")
-        for p in new_pages:
-            print(f"  new: {p}")
+        for stale_page in stale:
+            detail = f" ({stale_page['reason']}"
+            if stale_page.get("verification"):
+                detail += f", verification: {stale_page['verification']})"
+            else:
+                detail += ")"
+            print(f"  stale: {stale_page['page']}{detail}")
+        for page in new_pages:
+            print(f"  new: {page}")
         if quarantined:
             print(f"quarantined: {len(quarantined)} output page(s) excluded from the index")
             for item in quarantined:
-                print(f"  held: {item['page']} (status: {item['status']})")
+                print(f"  held: {item['page']} (verification: {item['verification']})")
     return 0
 
 
@@ -1549,11 +1911,13 @@ def parse_args(argv):
     b.add_argument("--model", default=DEFAULT_MODEL, help="embedding model (default %(default)s)")
     b.add_argument("--json", action="store_true", help="JSON build report")
 
-    q = sub.add_parser("query", help="search the index")
+    q = sub.add_parser("query", help="search canonical knowledge, recent observations, or both")
     q.add_argument("text", help="query text")
-    q.add_argument("--top", type=int, default=8, help="results to return (default %(default)s)")
+    q.add_argument("--top", type=int, default=8, help="results per scope (default %(default)s)")
+    q.add_argument("--scope", choices=("canonical", "recent", "all"), default="canonical",
+                   help="knowledge layer to search (default %(default)s)")
     q.add_argument("--mode", choices=("hybrid", "bm25", "vector"), default="hybrid",
-                   help="ranking mode (default %(default)s)")
+                   help="canonical ranking mode; recent is always BM25 (default %(default)s)")
     q.add_argument("--model", default=None, help="embedding model override (default: index model)")
     q.add_argument("--json", action="store_true", help="JSON results")
 
@@ -1564,6 +1928,11 @@ def parse_args(argv):
     g.add_argument("page", nargs="?", help="page path as stored by build (omit for the hub list)")
     g.add_argument("--top", type=int, default=10, help="hubs to list (default %(default)s)")
     g.add_argument("--json", action="store_true", help="JSON output")
+    g.add_argument("--html", metavar="PATH", nargs="?", const="",
+                   help="write a self-contained interactive HTML view "
+                        "(default path: .cache/wiki-graph.html)")
+    g.add_argument("--max-nodes", type=int, default=1500,
+                   help="cap for --html, highest degree first (default %(default)s)")
 
     e = sub.add_parser("eval", help="score retrieval against a human-authored gold query set")
     e.add_argument("dataset", help="gold set JSON: {name, queries: [{id, text, relevant: [page paths], category}]}")

@@ -9,11 +9,10 @@ combine them.
 `wiki/dashboard.md`, plus the root `AGENTS.md`. A mode only adds *content*
 folders under `wiki/`; it never invents a second index, log or hot cache.
 
-The per-mode frontmatter below is a **content schema** for that mode's own pages
-(`url`, `path`, `owner`, `priority`, …). Universal fields (`type`, `title`,
-`created`, `updated`, `tags`, `status`) and the `status` enum come from
-the `wiki-markdown` skill (`references/frontmatter.md`); when a mode's `status` values differ, keep
-them as mode-specific extra fields rather than overloading `status`.
+The per-mode frontmatter below adds content-specific fields to the universal
+schema. Every page still carries `type`, `title`, `created`, `updated`, `tags`,
+`maturity`, and `verification` from `wiki-markdown/references/frontmatter.md`.
+Workflow/state fields use explicit names and never overload those dimensions.
 
 ---
 
@@ -37,8 +36,10 @@ Frontmatter for `wiki/pages/` notes:
 ```yaml
 ---
 type: page
+maturity: developing
+verification: unreviewed
 url: "https://example.com/page-slug"
-status: live          # live | redirect | 404 | stub | no-index
+site_status: live     # live | redirect | 404 | stub | no-index
 title: ""
 h1: ""
 meta_description: ""
@@ -79,8 +80,10 @@ Frontmatter for `wiki/modules/` notes:
 ```yaml
 ---
 type: module           # module | component | decision | dependency | flow
+maturity: developing
+verification: unreviewed
 path: "src/auth/"
-status: active         # active | deprecated | experimental | planned
+component_status: active  # active | deprecated | experimental | planned
 language: typescript
 purpose: ""
 maintainer: ""
@@ -117,9 +120,11 @@ vault/
 Frontmatter for `wiki/decisions/` notes:
 ```yaml
 ---
-type: decision         # stakeholder | decision | deliverable | intel | meeting | competitor
-status: active         # active | pending | done | blocked | superseded
-priority: 3            # 1 (highest) to 5 (lowest)
+type: decision
+maturity: developing
+verification: unreviewed
+decision_status: active   # active | superseded | rejected
+priority: 3               # 1 (highest) to 5 (lowest)
 date: YYYY-MM-DD
 owner: ""
 due_date: ""
@@ -155,7 +160,9 @@ Frontmatter for `wiki/goals/` notes:
 ```yaml
 ---
 type: goal             # goal | concept | person | area | resource | reflection
-status: active         # active | paused | completed | abandoned
+maturity: developing
+verification: unreviewed
+goal_status: active    # active | paused | completed | abandoned
 area: career           # health | career | finance | creative | relationships | growth
 priority: 1
 target_date: YYYY-MM-DD
@@ -192,7 +199,9 @@ Frontmatter for `wiki/papers/` notes:
 ```yaml
 ---
 type: paper            # paper | concept | entity | thesis | gap
-status: summarized     # raw | summarized | synthesized | superseded
+maturity: developing
+verification: unreviewed
+research_status: summarized  # raw | summarized | synthesized | superseded
 year: 2024
 authors: []
 venue: ""
@@ -230,7 +239,8 @@ Frontmatter for `wiki/concepts/` notes:
 ```yaml
 ---
 type: concept          # concept | character | theme | chapter | synthesis
-status: developing     # stub | developing | mature
+maturity: developing  # seed | developing | mature | evergreen
+verification: unreviewed
 source_chapters: []
 first_appearance: ""
 tags: [concept]

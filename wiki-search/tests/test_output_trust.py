@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-"""Tests for output-trust quarantine in wiki-search.
+"""Tests for output verification quarantine in wiki-search.
 
-A page an agent filed back into the wiki (an answer, a summary) is a claim, not
-knowledge, until its status says it was checked. With `trust.output_types`
-configured, those pages stay out of the index until their status appears in
-`trust.indexed_status`.
-
-The gate is opt-in: an unconfigured vault indexes everything, which is the
-behavior every existing vault depends on.
+A self-authored answer or summary stays out of canonical retrieval until its
+`verification` qualifies. `maturity` is independent and never opens the gate.
+The gate remains opt-in: an unconfigured vault indexes every page.
 """
 
+import contextlib
 import importlib.util
 import json
 import os
@@ -27,7 +24,8 @@ SCRIPT = Path(__file__).parents[1] / "scripts" / "wiki-search.py"
 ANSWER = """---
 type: {page_type}
 title: "Answer"
-status: {status}
+maturity: {maturity}
+verification: {verification}
 created: 2026-10-20
 updated: 2026-10-20
 tags: [question]
@@ -80,9 +78,9 @@ class TrustCase(unittest.TestCase):
         lines = ["trust:", "  output_types:"]
         for value in self.trust_config.get("output_types", []):
             lines.append(f"    - {value}")
-        if "indexed_status" in self.trust_config:
-            lines.append("  indexed_status:")
-            for value in self.trust_config["indexed_status"]:
+        if "indexed_verification" in self.trust_config:
+            lines.append("  indexed_verification:")
+            for value in self.trust_config["indexed_verification"]:
                 lines.append(f"    - {value}")
         if "require_evidence" in self.trust_config:
             lines.append(f"  require_evidence: {str(self.trust_config['require_evidence']).lower()}")
@@ -93,19 +91,26 @@ class TrustCase(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.root, ignore_errors=True)
 
-    def write_answer(self, name: str, status: str, page_type: str = "question",
-                     evidence: str | None = None):
+    def write_answer(self, name: str, verification: str, page_type: str = "question",
+                     evidence: str | None = None, maturity: str = "developing"):
         path = self.root / "wiki" / "questions" / f"{name}.md"
-        body = ANSWER.format(status=status, page_type=page_type, filler=FILLER)
+        body = ANSWER.format(
+            maturity=maturity,
+            verification=verification,
+            page_type=page_type,
+            filler=FILLER,
+        )
         if evidence is not None:
             body = body.replace("tags: [question]\n", f"tags: [question]\n{evidence}\n", 1)
         path.write_text(body, encoding="utf-8")
         return path.relative_to(self.root).as_posix()
 
-    def write_concept(self, name: str, status: str = "confirmed"):
+    def write_concept(self, name: str, maturity: str = "mature"):
         path = self.root / "wiki" / "concepts" / f"{name}.md"
         path.write_text(
-            ANSWER.format(status=status, page_type="concept", filler=FILLER),
+            ANSWER.format(
+                maturity=maturity, verification="supported", page_type="concept", filler=FILLER
+            ),
             encoding="utf-8",
         )
         return path.relative_to(self.root).as_posix()
@@ -133,7 +138,7 @@ class UnconfiguredVaultTest(TrustCase):
     trust_config = None
 
     def test_everything_is_indexed_without_trust_config(self):
-        answer = self.write_answer("draft-answer", "developing")
+        answer = self.write_answer("draft-answer", "unreviewed")
         code, _ = self.build()
         self.assertEqual(code, 0)
         self.assertIn(answer, self.indexed_paths())
@@ -142,52 +147,52 @@ class UnconfiguredVaultTest(TrustCase):
 class QuarantineTest(TrustCase):
     trust_config = {"output_types": ["question"]}
 
-    def test_unverified_answer_is_not_indexed(self):
-        answer = self.write_answer("draft-answer", "developing")
+    def test_unreviewed_answer_is_not_indexed(self):
+        answer = self.write_answer("draft-answer", "unreviewed")
         code, report = self.build()
         self.assertEqual(code, 0)
         self.assertNotIn(answer, self.indexed_paths())
         self.assertEqual(report["quarantined_count"], 1)
-        self.assertEqual(report["quarantined"][0]["status"], "developing")
+        self.assertEqual(report["quarantined"][0]["verification"], "unreviewed")
 
-    def test_verified_answer_is_indexed(self):
-        answer = self.write_answer("filed-answer", "verified")
+    def test_supported_answer_is_indexed(self):
+        answer = self.write_answer("filed-answer", "supported")
         self.build()
         self.assertIn(answer, self.indexed_paths())
 
-    def test_missing_status_is_quarantined_and_reported_as_such(self):
-        path = self.root / "wiki" / "questions" / "stateless.md"
+    def test_missing_verification_is_quarantined_and_reported(self):
+        path = self.root / "wiki" / "questions" / "unverified.md"
         path.write_text(
-            "---\ntype: question\ntitle: A\ncreated: 2026-10-20\n"
+            "---\ntype: question\ntitle: A\nmaturity: developing\ncreated: 2026-10-20\n"
             "updated: 2026-10-20\ntags: [question]\n---\n\n# A\n\n" + FILLER,
             encoding="utf-8",
         )
         _, report = self.build()
-        self.assertEqual(report["quarantined"][0]["status"], "(no status)")
+        self.assertEqual(report["quarantined"][0]["verification"], "(no verification)")
 
     def test_other_page_types_are_never_gated(self):
-        concept = self.write_concept("concept", status="draft")
+        concept = self.write_concept("concept", maturity="seed")
         self.build()
         self.assertIn(concept, self.indexed_paths(),
                       "only configured output types may be quarantined")
 
-    def test_status_matching_is_case_insensitive(self):
-        upper = self.write_answer("upper", "VERIFIED")
-        lower = self.write_answer("lower", "developing")
+    def test_verification_matching_is_case_insensitive(self):
+        upper = self.write_answer("upper", "SUPPORTED")
+        lower = self.write_answer("lower", "unreviewed")
         self.build()
         indexed = self.indexed_paths()
         self.assertIn(upper, indexed)
         self.assertNotIn(lower, indexed)
 
 
-class CustomStatusTest(TrustCase):
+class CustomVerificationTest(TrustCase):
     trust_config = {"output_types": ["question", "summary"],
-                    "indexed_status": ["verified", "corroborated"]}
+                    "indexed_verification": ["supported", "corroborated"]}
 
-    def test_every_listed_status_passes(self):
-        self.write_answer("a", "verified")
+    def test_every_listed_verification_passes(self):
+        self.write_answer("a", "supported")
         self.write_answer("b", "corroborated")
-        self.write_answer("c", "developing")
+        self.write_answer("c", "unreviewed")
         self.build()
         indexed = self.indexed_paths()
         self.assertEqual(
@@ -195,8 +200,8 @@ class CustomStatusTest(TrustCase):
         )
 
     def test_multiple_output_types_are_gated_together(self):
-        answer = self.write_answer("answer", "developing")
-        summary = self.write_answer("summary", "developing", page_type="summary")
+        answer = self.write_answer("answer", "unreviewed")
+        summary = self.write_answer("summary", "unreviewed", page_type="summary")
         self.build()
         indexed = self.indexed_paths()
         self.assertNotIn(answer, indexed)
@@ -230,12 +235,12 @@ class QuarantinedPageIsNotSearchableTest(TrustCase):
         import io
 
         self.write_concept("concept")
-        self.write_answer("draft-answer", "developing")
+        self.write_answer("draft-answer", "unreviewed")
         self.build()
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
             self.search.cmd_query(SimpleNamespace(
-                text="Answer", top=10, mode="bm25", model=None, json=True,
+                text="Answer", top=10, scope="canonical", mode="bm25", model=None, json=True,
             ))
         payload = json.loads(stdout.getvalue())
         pages = {hit["page"] for hit in payload["results"]}
@@ -244,26 +249,26 @@ class QuarantinedPageIsNotSearchableTest(TrustCase):
 
 
 class EvidenceTest(TrustCase):
-    """`verified` is a promise; without a pointer to what was checked it is empty."""
+    """`supported` needs an evidence pointer when the stricter gate is enabled."""
 
     trust_config = {"output_types": ["question"], "require_evidence": True}
 
-    def test_verified_without_evidence_is_held(self):
-        answer = self.write_answer("no-evidence", "verified")
+    def test_supported_without_evidence_is_held(self):
+        answer = self.write_answer("no-evidence", "supported")
         _, report = self.build()
         self.assertNotIn(answer, self.indexed_paths())
-        self.assertEqual(report["quarantined"][0]["status"], "verified without evidence")
+        self.assertEqual(report["quarantined"][0]["verification"], "supported without evidence")
 
-    def test_verified_with_scalar_evidence_is_indexed(self):
+    def test_supported_with_scalar_evidence_is_indexed(self):
         answer = self.write_answer(
-            "scalar", "verified", evidence='evidence: "https://example.test/commit/abc"'
+            "scalar", "supported", evidence='evidence: "https://example.test/commit/abc"'
         )
         self.build()
         self.assertIn(answer, self.indexed_paths())
 
-    def test_verified_with_list_evidence_is_indexed(self):
+    def test_supported_with_list_evidence_is_indexed(self):
         answer = self.write_answer(
-            "listed", "verified",
+            "listed", "supported",
             evidence='evidence:\n  - "https://example.test/commit/one"\n'
                      '  - "https://example.test/commit/two"',
         )
@@ -271,14 +276,14 @@ class EvidenceTest(TrustCase):
         self.assertIn(answer, self.indexed_paths())
 
     def test_empty_evidence_list_is_not_evidence(self):
-        answer = self.write_answer("empty-list", "verified", evidence="evidence:")
+        answer = self.write_answer("empty-list", "supported", evidence="evidence:")
         _, report = self.build()
         self.assertNotIn(answer, self.indexed_paths())
-        self.assertEqual(report["quarantined"][0]["status"], "verified without evidence")
+        self.assertEqual(report["quarantined"][0]["verification"], "supported without evidence")
 
     def test_requirement_is_off_by_default(self):
         self.search.REQUIRE_EVIDENCE = False
-        answer = self.write_answer("no-evidence", "verified")
+        answer = self.write_answer("no-evidence", "supported")
         self.build()
         self.assertIn(answer, self.indexed_paths())
 
@@ -287,15 +292,14 @@ class StatusCommandTest(TrustCase):
     trust_config = {"output_types": ["question"]}
 
     def test_quarantined_page_is_reported_as_quarantined_not_deleted(self):
-        answer = self.write_answer("draft-answer", "developing")
+        answer = self.write_answer("draft-answer", "unreviewed")
         self.build()
         # Once indexed then quarantined: the row disappears but must be labelled.
-        self.write_answer("draft-answer", "verified")
+        self.write_answer("draft-answer", "supported")
         self.build()
         self.assertIn(answer, self.indexed_paths())
 
-        self.write_answer("draft-answer", "developing")
-        import contextlib
+        self.write_answer("draft-answer", "unreviewed")
         import io
 
         stdout = io.StringIO()

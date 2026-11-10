@@ -98,7 +98,8 @@ updated: 2026-04-08
 tags:
   - tag-one                      # list items use - format
   - tag-two
-status: developing
+maturity: developing
+verification: unreviewed
 related:
   - "[[Other Note]]"             # wikilinks must be quoted in YAML
 sources:
@@ -115,10 +116,9 @@ Rules:
 
 **MANDATORY — read [`references/frontmatter.md`](references/frontmatter.md) in
 full before creating a page of type `source`, `entity`, `concept`,
-`comparison`, `question` or `domain`, or when the vault uses bilingual
-terminology.** It holds the universal field set, the `status` enum, the
-type-specific additions and the `dnt_class`/`lang`/`aliases` rules. The snippet
-above is only the shape; the schema decides which fields are required.
+`comparison`, `question`, `decision`, or `domain`, or when the vault uses
+bilingual terminology.** It defines universal `maturity` and `verification`,
+type-specific fields including `decision_status`, and terminology rules.
 
 **Do NOT load** it for a page whose type and fields you are simply editing —
 the rules above are sufficient for that.

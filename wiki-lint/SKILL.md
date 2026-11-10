@@ -48,9 +48,9 @@ Work through these in order:
 1. **Orphan pages**. Wiki pages with no inbound wikilinks. They exist but nothing points to them.
 2. **Dead links**. Wikilinks that reference a page that does not exist.
 3. **Stale claims**. Assertions on older pages that newer sources have contradicted or updated.
-4. **Missing pages**. Concepts or entities mentioned in multiple pages but lacking their own page.
-5. **Missing cross-references**. Entities mentioned in a page but not linked.
-6. **Frontmatter gaps**. Pages missing required fields (type, status, created, updated, tags).
+4. **Missing durable owner pages**. Knowledge with repeated standalone value but no canonical owner; mentions alone do not qualify.
+5. **Missing cross-references**. Existing canonical pages mentioned but not linked.
+6. **Frontmatter gaps & value contract** (deterministic). Pages missing required non-empty fields (`type`, `title`, `maturity`, `verification`, `created`, `updated`, `tags`), using invalid enum values (`maturity` in `seed|developing|mature|evergreen`, `verification` in `unreviewed|supported|disputed`, `decision_status` in `active|superseded|rejected` when `type: decision`), or carrying malformed dates (`YYYY-MM-DD`, with optional ISO datetime on `updated`) (`scripts/lint-frontmatter.py`, aggregated into `run-lint.py`). Exempts navigation/state pages and `wiki/_templates/`.
 7. **Empty sections** (deterministic). A heading with no content and no child headings (`scripts/lint-empty-sections.py`, aggregated into `run-lint.py`). Heading-level aware: `##` immediately followed by `###` is not empty, fenced code counts as content, frontmatter and navigation pages are skipped. `--thin N` adds a report-only warning for sections under N characters (off by default — many legitimate sections are one short line); the error is the gate.
 8. **Stale index entries**. Items in `wiki/index.md` pointing to renamed or deleted pages.
 9. **Address validity** (DragonScale Mechanism 2). For every page that has an `address:` frontmatter field, validate the format. See `references/opt-in-checks.md` (§ Address Validation).
@@ -82,7 +82,8 @@ title: "Lint Report YYYY-MM-DD"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 tags: [meta, lint]
-status: developing
+maturity: developing
+verification: unreviewed
 ---
 
 # Lint Report: YYYY-MM-DD
@@ -103,7 +104,7 @@ status: developing
 - "concept name": mentioned in [[Page A]], [[Page B]], [[Page C]]. Suggest: create a concept page.
 
 ## Frontmatter Gaps
-- [[Page Name]]: missing fields: status, tags
+- [[Page Name]]: missing fields: maturity, verification
 
 ## Stale Claims
 - [[Page Name]]: claim "X" may conflict with newer source [[Newer Source]].
@@ -156,7 +157,8 @@ updated: YYYY-MM-DD
 tags:
   - meta
   - lint
-status: developing
+maturity: developing
+verification: unreviewed
 ---
 
 # Wiki lint health
@@ -244,11 +246,12 @@ A missing companion script is reported as `not available`, never as a pass.
 Always show the lint report first. Ask: "Should I fix these automatically, or do you want to review each one?"
 
 Safe to auto-fix:
-- Adding missing frontmatter fields with placeholder values
-- Creating stub pages for missing entities
-- Adding wikilinks for unlinked mentions
+- Adding deterministic wikilinks to existing unambiguous pages
+- Repairing mechanical frontmatter syntax without inventing values
 
 Needs review before fixing:
-- Deleting orphan pages (they might be intentionally isolated)
-- Resolving contradictions (requires human judgment)
+- Assigning `maturity` or `verification` (requires content/evidence judgment)
+- Creating a page for a concept/entity (requires a durable standalone owner)
+- Deleting orphan pages
+- Resolving contradictions
 - Merging duplicate pages

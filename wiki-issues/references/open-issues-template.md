@@ -19,7 +19,8 @@ title: "Open Issues"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 tags: [meta, issues, tracking]
-status: developing
+maturity: developing
+verification: supported
 related: ["[[log]]"]
 # --- Stack --- ordered work queue; sort lint-enforced by lint-open-issues:
 #   1. priority ASC (P0 first)   2. ready first (empty blocked_by)

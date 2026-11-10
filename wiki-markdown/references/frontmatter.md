@@ -17,7 +17,8 @@ updated: 2026-04-07
 tags:
   - <domain-tag>
   - <type-tag>
-status: <seed|developing|mature|evergreen>
+maturity: <seed|developing|mature|evergreen>
+verification: <unreviewed|supported|disputed>
 related:
   - "[[Other Page]]"
 sources:
@@ -25,13 +26,16 @@ sources:
 ---
 ```
 
-**status values:** `seed` (exists, barely populated) · `developing` (real
-content, not complete) · `mature` (comprehensive, well-linked) · `evergreen`
-(unlikely to need updates).
+`maturity` describes completeness only: `seed` (barely populated), `developing`
+(useful but incomplete), `mature` (comprehensive and linked), `evergreen`
+(stable enough for infrequent revision).
 
-`type: decision` overrides this enum with its own lifecycle (`active`,
-`superseded`, `rejected`) — see Type-Specific Additions. Do not mix the two in
-one page.
+`verification` describes evidential support only: `unreviewed` (not checked),
+`supported` (checked against cited evidence), `disputed` (unresolved conflict).
+Never encode verification or workflow state in `maturity`.
+
+Decision pages additionally use `decision_status`; they do not overload either
+universal field.
 
 ---
 
@@ -75,9 +79,15 @@ key_claims:
 
 ### entity
 
+Keep `type: entity` across all entity subtypes (`person`, `org`, `system`, `service`, `product`, `repository`, `place`) and attach the composable flat facet keys that apply (see `wiki/references/templates.md` for canonical templates and `.obsidian/types.json`):
+
 ```yaml
-entity_type: person     # person | organization | product | repository | place
-role: ""
+entity_kind: system     # person | org | system | service | product | repository | place
+role: ""                # person facet
+org: "[[Organization]]" # person facet
+owner: ""               # system / service facet
+repo: ""                # system / repository facet
+endpoint: ""            # system / service facet
 first_mentioned: "[[Source Title]]"
 aliases:                # required when dnt_class is set; otherwise optional
   - "alternative name"
@@ -118,7 +128,7 @@ answer_quality: solid   # draft | solid | definitive
 
 ```yaml
 decision_date: YYYY-MM-DD
-status: active          # active | superseded | rejected  (override of the universal status enum)
+decision_status: active  # active | superseded | rejected
 ```
 
 ### domain
@@ -133,8 +143,9 @@ page_count: 0
 ## Rules
 
 1. Use flat YAML only. Never nest objects.
-2. Dates as `YYYY-MM-DD` strings, not ISO datetime.
-3. Lists always use the `- item` format, not inline `[a, b, c]`.
+2. Dates as `YYYY-MM-DD` strings, not ISO datetime on canonical pages. Reserve ISO-8601 timestamps (`YYYY-MM-DDTHH:MM:SSZ`) for machine ledgers (`.cache/knowledge-flow/`, `.raw/.manifest.json`) or optional volatile operational state; `updated` accepts an optional ISO timestamp when a script writes one, and `wiki-sync` treats bare `YYYY-MM-DD` on `updated` as end-of-day UTC so same-day commits do not trigger false staleness.
+3. Lists always use the `- item` format, not inline `[a, b, c]` (empty lists `[]` are allowed on optional fields like `related: []`).
 4. Wikilinks in YAML fields must be quoted: `"[[Page Name]]"`.
-5. Keep `related` and `sources` as wikilinks to wiki pages, not raw paths or URLs. Cite a raw file inline with the `^[.raw/path:L1-L2]` marker that `wiki-lint` validates.
-6. Update `updated` every time you edit the page content.
+5. Every page has non-empty `type`, `title`, `created`, `updated`, `tags`, `maturity` (`seed|developing|mature|evergreen`), and `verification` (`unreviewed|supported|disputed`); decisions (`type: decision`) also require `decision_status` (`active|superseded|rejected`).
+6. Keep `related` and `sources` as wikilinks to wiki pages, not raw paths or URLs. Cite a raw file inline with the `^[.raw/path:L1-L2]` marker that `wiki-lint` validates.
+7. Update `updated` every time you edit page content.

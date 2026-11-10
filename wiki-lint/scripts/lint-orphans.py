@@ -32,8 +32,8 @@ def find_wiki_root(start: str = ".") -> str:
     )
 
 
-META_PAGES = {"index", "log", "hot", "overview", "_index", "dashboard"}
-
+META_PAGES = {"index", "log", "hot", "overview", "_index", "dashboard", "goals"}
+SKIP_TOP_DIRS = {"_templates", ".reciclaje"}
 
 def is_meta_page(stem: str) -> bool:
     """Check if a page stem is a meta/navigation page."""
@@ -53,8 +53,10 @@ def get_all_wiki_pages(wiki_root: str) -> dict[str, str]:
     pages: dict[str, str] = {}
     wiki_dir = Path(f"{wiki_root}/wiki")
     for md_file in glob.glob(f"{wiki_root}/wiki/**/*.md", recursive=True):
-        stem = Path(md_file).stem
         rel = os.path.relpath(md_file, f"{wiki_root}/wiki")
+        if Path(rel).parts and Path(rel).parts[0] in SKIP_TOP_DIRS:
+            continue
+        stem = Path(md_file).stem
         rel_stem = str(Path(rel).with_suffix(""))
         full_rel = os.path.relpath(md_file, wiki_root)
         full_stem = str(Path(full_rel).with_suffix(""))
@@ -68,7 +70,7 @@ def get_all_wiki_pages(wiki_root: str) -> dict[str, str]:
         if not d.is_dir():
             continue
         rel_dir = str(d.relative_to(wiki_dir))
-        if not rel_dir or rel_dir == ".":
+        if not rel_dir or rel_dir == "." or Path(rel_dir).parts[0] in SKIP_TOP_DIRS:
             continue
         if not any(d.rglob("*.md")):
             continue
@@ -88,6 +90,9 @@ def build_inbound_map(wiki_root: str, pages: dict[str, str]) -> dict[str, set[st
     wiki_dir = Path(f"{wiki_root}/wiki")
 
     for md_file in sorted(glob.glob(f"{wiki_root}/wiki/**/*.md", recursive=True)):
+        rel_wiki = os.path.relpath(md_file, f"{wiki_root}/wiki")
+        if Path(rel_wiki).parts and Path(rel_wiki).parts[0] in SKIP_TOP_DIRS:
+            continue
         rel_path = os.path.relpath(md_file, wiki_root)
         content = Path(md_file).read_text(encoding="utf-8", errors="replace")
         for match in re.finditer(r'\[\[([^]|]+)(?:\|[^\]]*)?\]\]', content):
@@ -108,7 +113,7 @@ def build_inbound_map(wiki_root: str, pages: dict[str, str]) -> dict[str, set[st
         if not d.is_dir():
             continue
         rel_dir = str(d.relative_to(wiki_dir))
-        if not rel_dir or rel_dir == ".":
+        if not rel_dir or rel_dir == "." or Path(rel_dir).parts[0] in SKIP_TOP_DIRS:
             continue
         if not any(d.rglob("*.md")):
             continue

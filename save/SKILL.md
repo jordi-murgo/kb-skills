@@ -71,7 +71,8 @@ created: YYYY-MM-DD
 updated: YYYY-MM-DD
 tags:
   - <relevant-tag>
-status: developing
+maturity: developing
+verification: unreviewed
 related:
   - "[[Any Wiki Page Mentioned]]"
 sources:
@@ -88,7 +89,7 @@ answer_quality: solid
 For `decision` type, add:
 ```yaml
 decision_date: YYYY-MM-DD
-status: active
+decision_status: active
 ```
 
 ---

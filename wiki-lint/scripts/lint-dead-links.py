@@ -93,6 +93,9 @@ def main():
     files_scanned = 0
     
     for md_file in sorted(glob.glob(f"{wiki_root}/wiki/**/*.md", recursive=True)):
+        rel_wiki = os.path.relpath(md_file, f"{wiki_root}/wiki")
+        if Path(rel_wiki).parts and Path(rel_wiki).parts[0] == "_templates":
+            continue
         rel_path = os.path.relpath(md_file, wiki_root)
         if rel_path.startswith(f"wiki{os.sep}meta{os.sep}lint-report"):
             continue  # lint reports quote links verbatim; scanning them self-pollutes
@@ -102,7 +105,7 @@ def main():
         
         for slug in links:
             # Skip special cases
-            if slug in ("_index", "index", "log", "hot", "overview"):
+            if slug in ("_index", "index", "log", "hot", "overview", "dashboard", "goals"):
                 continue
             if slug not in wiki_pages:
                 dead_links.append((slug, rel_path))

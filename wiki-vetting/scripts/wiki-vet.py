@@ -434,6 +434,37 @@ def verdict_for(probs, thresholds=None, band=DEFAULT_BAND, skip_grounded=False):
     confidence = round(min(decided), 3) if decided else 0.0
     return verdict, bits, {"undecided_axes": undecided, "confidence": confidence}
 
+ROUTING_ACTIONS = (
+    "reject_sensitive",
+    "reject_ungrounded",
+    "recent_only",
+    "merge_or_noop",
+    "promote_candidate",
+    "human_review",
+)
+
+
+def routing_action(verdict, bits, signal):
+    """Map calibrated axes to the next knowledge-flow step.
+
+    The coarse verdict remains for compatibility. The action is operational:
+    it tells ingest whether the claim can enter canonical consolidation, stay
+    recent-only, or needs a human decision.
+    """
+    if bits.get("sensitive"):
+        return "reject_sensitive"
+    if signal.get("undecided_axes"):
+        return "human_review"
+    if not bits.get("grounded"):
+        return "reject_ungrounded"
+    if not bits.get("durable"):
+        return "recent_only"
+    if bits.get("duplicate"):
+        return "merge_or_noop"
+    if verdict == "accept":
+        return "promote_candidate"
+    return "human_review"
+
 
 def main(argv=None):
     args = parse_args(argv)
@@ -454,6 +485,7 @@ def main(argv=None):
             verdict, bits, signal = verdict_for(
                 probs, thresholds=thresholds, band=band, skip_grounded=skip
             )
+            action = routing_action(verdict, bits, signal)
             results.append(
                 {
                     "claim": claim["claim"],
@@ -463,11 +495,16 @@ def main(argv=None):
                     "probabilities": probs,
                     "bits": bits,
                     "verdict": verdict,
+                    "action": action,
                     **signal,
                 }
             )
 
     counts = {v: sum(1 for r in results if r["verdict"] == v) for v in ("accept", "review", "reject")}
+    action_counts = {
+        action: sum(1 for result in results if result["action"] == action)
+        for action in ROUTING_ACTIONS
+    }
     if args.json:
         print(
             json.dumps(
@@ -477,6 +514,7 @@ def main(argv=None):
                     "thresholds": thresholds,
                     "band": band,
                     "counts": counts,
+                    "action_counts": action_counts,
                     "verdicts": results,
                 },
                 ensure_ascii=False,
@@ -486,7 +524,7 @@ def main(argv=None):
         return 0
 
     header = (
-        f"{'#':>2}  {'VERDICT':<7}  {'conf':>5}  {'grounded':>8}  {'durable':>8}  "
+        f"{'#':>2}  {'VERDICT':<7}  {'ACTION':<20}  {'conf':>5}  {'grounded':>8}  {'durable':>8}  "
         f"{'duplicate':>9}  {'sensitive':>9}  claim"
     )
     print(header)
@@ -496,13 +534,15 @@ def main(argv=None):
         claim = r["claim"] if len(r["claim"]) <= 60 else r["claim"][:57] + "..."
         grounded = f"{p['grounded']:>8.2f}" if "grounded" in p else f"{'skip':>8}"
         print(
-            f"{i:>2}  {r['verdict']:<7}  {r['confidence']:>5.2f}  {grounded}  {p['durable']:>8.2f} "
-            f"  {p['duplicate']:>9.2f}  {p['sensitive']:>9.2f}  {claim}"
+            f"{i:>2}  {r['verdict']:<7}  {r['action']:<20}  {r['confidence']:>5.2f}  "
+            f"{grounded}  {p['durable']:>8.2f}  {p['duplicate']:>9.2f}  "
+            f"{p['sensitive']:>9.2f}  {claim}"
         )
     print(
         f"\nSummary: {counts['accept']} accept, {counts['review']} review, "
         f"{counts['reject']} reject ({len(results)} claims, model={args.model})"
     )
+    print("Actions: " + ", ".join(f"{name}={count}" for name, count in action_counts.items() if count))
     print(
         "Thresholds: "
         + ", ".join(f"{dim}={thresholds[dim]:.2f}" for dim in DIMS)

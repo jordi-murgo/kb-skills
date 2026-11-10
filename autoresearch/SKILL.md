@@ -1,15 +1,12 @@
 ---
 name: autoresearch
 description: >
-  Autonomous iterative research loop: takes a topic, runs web searches, fetches
-  sources, synthesizes findings, and files everything into the wiki as
-  structured pages. Use when the user wants research executed and filed, not
-  just planned: use research-brief to write or audit a brief, vampirize to judge
-  whether an external artifact is reusable, and wiki-search to answer from pages
-  already in the vault. Triggers on: "/autoresearch", "autoresearch",
-  "research [topic]", "deep dive into [topic]", "investigate [topic]",
-  "find everything about [topic]", "research and file", "go research",
-  "build a wiki on".
+  Autonomous research loop that searches, evaluates sources, records cited
+  observations through wiki-ingest, and produces one synthesis candidate by
+  default. Recent findings become searchable immediately without flooding the
+  canonical wiki. Use research-brief to plan and wiki-consolidate to promote.
+  Triggers on: "/autoresearch", "autoresearch", "research [topic]", "deep dive",
+  "investigate [topic]", "research and file", "go research".
 allowed-tools: Read Write Edit Glob Grep WebFetch WebSearch Bash
 ---
 
@@ -100,13 +97,12 @@ When `QUEUE_MODE=1`:
 
 **On loop completion (success)**:
 - Flip the row's `status: in-progress` → `status: done`.
-- Set `finished: <today>`, bump `updated:`.
-- Append `deliverables:` links pointing at every page created in this run (synthesis, sources, concepts, entities).
-- Update `wiki/log.md` per the normal *After Filing* section, plus a `Queue-task: R-YYYY-NNN` line.
+- Set `finished: <today>`, bump `updated:`, and link the single synthesis draft in `deliverables:`.
+- Record observation/candidate IDs in the synthesis; do not add provisional work to the canonical wiki log.
 
 **On loop failure or abort**:
 - Flip the row back to `status: queued`. Leave `started:` populated so retry latency is visible.
-- Log the failure mode to `wiki/log.md` under `Queue-task: R-YYYY-NNN — failed (<reason>)`.
+- Record the failure reason in the queue task's existing notes field when available; do not create a canonical content event.
 
 ### C. Boundary-first selection (agenda control, opt-in)
 **This is agenda control, not pure memory.** This mechanism is labeled agenda control (rather than memory) because it shapes which direction the research agent moves next. Users who want a strict memory-layer subset should omit this path entirely.
@@ -175,150 +171,79 @@ Max rounds: 3 (as set in program.md). Stop when depth is reached or max rounds h
 
 ### Output path by mode
 
-The base output path differs by invocation mode:
+- Queue task: `wiki/meta/draft-<task-id>/questions/research-<slug>.md`.
+- Ad-hoc topic: `wiki/meta/draft-adhoc-<slug>-<YYYY-MM-DD-HHMM>/questions/research-<slug>.md` with `MAX_DEPTH: 1`, `MAX_SOURCES: 5`.
 
-- **`QUEUE_MODE=1`** (task picked from research-queue via no-args or explicit task ID): outputs first land under `wiki/meta/draft-<task-id>/` per the brief's W11 instruction. Sub-paths mirror the final structure: `wiki/meta/draft-<task-id>/sources/`, `wiki/meta/draft-<task-id>/concepts/`, `wiki/meta/draft-<task-id>/entities/`, `wiki/meta/draft-<task-id>/questions/`. Manual review (no promotion skill ships with this repo) promotes drafts to final paths after a human pass.
-- **`QUEUE_MODE=0` ad-hoc topic** (free-text argument, boundary-mode pick, or user-chosen): outputs first land under `wiki/meta/draft-adhoc-<slug>-<YYYY-MM-DD-HHMM>/`. No brief = short default cap: `MAX_DEPTH: 1`, `MAX_SOURCES: 5`, overriding `references/program.md` defaults. Before starting the loop, surface one line: *"Ad-hoc mode uses a short default cap. For deeper runs, draft a brief via the research-brief skill and add it to wiki/meta/research-queue.md."*
+Draft paths are review artifacts, not canonical knowledge. Their sourced observations remain searchable through `wiki-search --scope recent|all` while the draft waits for consolidation.
 
-**Path substitution rule**: wherever the section below says "create `wiki/sources/Foo.md`", "create `wiki/concepts/Bar.md`", etc., prepend the active mode's base prefix to the path. The page templates (frontmatter, body structure) are identical across modes — only the path differs.
+### Default output: observations plus one synthesis
 
-### Pages to create
+1. For every selected source, run the `wiki-ingest` URL/file path so immutable evidence, atomic observations, candidate routing, and provenance use one contract. Do not invent a second research-only schema.
+2. Create exactly one synthesis draft for the topic. It groups findings, contradictions, confidence, and open questions without copying full source summaries.
+3. Create **no entity or concept page by default**. A mention never qualifies. Propose a separate durable page only when it owns reusable knowledge that cannot fit an existing canonical page.
+4. Create a source page only when the source is itself a reusable artifact: standard, paper, ADR, contract, design, dataset, or long-lived reference. Ordinary articles remain raw evidence plus observations.
+5. Search canonical and recent knowledge before proposing any page. Duplicate findings become `no_op`; independent evidence becomes `add_evidence`; temporary facts remain `recent_only`.
 
-After research is complete, create these pages (under the active base prefix):
-
-**wiki/sources/**. One page per major reference found
-- Use source frontmatter (type, source_type, author, date_published, url, confidence, key_claims)
-- Body: summary of the source, what it contributes to the topic
-
-**wiki/concepts/**. One page per significant concept extracted
-- Only create a page if the concept is substantive enough to stand alone
-- Check the index first: update existing concept pages rather than creating duplicates
-
-**wiki/entities/**. One page per significant person, org, or product identified
-- Check the index first: update existing entity pages
-
-**wiki/questions/**. One synthesis page titled "Research: [Topic]"
-- This is the master synthesis. Everything comes together here.
-- Sections: Overview, Key Findings, Entities, Concepts, Contradictions, Open Questions, Sources
-- Full frontmatter with related links to all pages created in this session
-
----
-
-## Synthesis Page Structure
+### Synthesis draft
 
 ```markdown
 ---
-type: synthesis
+type: question
 title: "Research: [Topic]"
+question: "[Research question]"
+answer_quality: draft
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 tags:
   - research
   - [topic-tag]
-status: developing
-related:
-  - "[[Every page created in this session]]"
-sources:
-  - "[[wiki/sources/Source 1]]"
-  - "[[wiki/sources/Source 2]]"
+maturity: developing
+verification: unreviewed
+related: []
+sources: []
 ---
 
 # Research: [Topic]
 
-## Overview
-[2-3 sentence summary of what was found]
+## Consolidated knowledge
+[What existing canonical pages already establish, with wikilinks.]
 
-## Key Findings
-- Finding 1 (Source: [[Source Page]])
-- Finding 2 (Source: [[Source Page]])
-- ...
-
-## Key Entities
-- [[Entity Name]]: role/significance
-
-## Key Concepts
-- [[Concept Name]]: one-line definition
+## Recent provisional findings
+- [Atomic finding] — observation `obs-...`; evidence `^[.raw/path:L1-L2]`; candidate action.
 
 ## Contradictions
-- [[Source A]] says X. [[Source B]] says Y. [Brief note on which is more credible and why]
+- [Conflicting claims, dates, scope, candidate ID, and what would resolve them.]
 
-## Open Questions
-- [Question that research didn't fully answer]
-- [Gap that needs more sources]
+## Synthesis
+[Cross-source interpretation. Mark inference explicitly.]
 
-## Sources
-- [[Source 1]]: author, date
-- [[Source 2]]: author, date
+## Open questions
+- [Unresolved evidence gap.]
 ```
 
----
+### After research
 
-## After Filing
-
-1. Update `wiki/index.md` **only when outputs landed in their final paths** (not under any `wiki/meta/draft-*/` prefix). Draft outputs are indexed at promotion time, not before — keeping the master catalog free of unreviewed pages
-2. Append to `wiki/log.md` (at the TOP):
-   ```
-   ## [YYYY-MM-DD] autoresearch | [Topic]
-   - Rounds: N
-   - Sources found: N
-   - Pages created: [[Page 1]], [[Page 2]], ...
-   - Synthesis: [[Research: Topic]]
-   - Key finding: [one sentence]
-   - Queue-task: R-YYYY-NNN     # only if QUEUE_MODE=1
-   ```
-3. Update `wiki/hot.md` with the research summary. Also refresh `wiki/dashboard.md` from `wiki/goals.md` and the research evidence before reporting — draft research outputs must not be treated as proof of delivered goals.
-4. **If `QUEUE_MODE=1`**: update the row in `wiki/meta/research-queue.md`:
-   - Flip `status: in-progress` → `status: done`.
-   - Set `finished: <today>`, bump `updated:`.
-   - Append `deliverables:` links pointing at every page created in this run.
-   - Re-run `python3 scripts/lint-deps.py` to confirm the DAG is still clean and to print the new ready set.
-5. **Append a commit-suggestion block to `wiki/meta/pending-commits.md`** (create the file from `wiki/_templates/pending-commits.md` if missing; new blocks go at the TOP, log-style). The block clusters the run's outputs into Conventional Commit-shaped proposals so the user — or a later commit hook — can ship them in one pass.
-
-   Use the in-memory list of pages produced by this run AND `git status --porcelain` to build the file list. Do not include paths the run did not touch.
-
-   ```markdown
-   ## YYYY-MM-DD HH:MM — R-YYYY-NNN <topic>   <!-- omit `R-YYYY-NNN` in QUEUE_MODE=0 -->
-
-   ### feat(research): R-YYYY-NNN <short-topic> autoresearch
-   <synthesis + concepts + entities + sources + decisions + comparisons + templates created>
-
-   ### chore(wiki): refresh coordinator files for R-YYYY-NNN
-   - wiki/hot.md
-   - wiki/index.md
-   - wiki/log.md
-   - wiki/meta/research-queue.md   <!-- only if QUEUE_MODE=1 -->
-   - wiki/dashboard.md
-   ```
-
-   Rules:
-   - One block per autoresearch run. Never edit prior blocks.
-   - If `git status --porcelain` shows files outside the run's known outputs (e.g. lint script changes, raw clippings), surface them in a `### chore(repo): unrelated changes — confirm before committing` sub-section so the user can decide whether to bundle or split.
-   - Coordinator files (`hot.md`, `index.md`, `log.md`, `dashboard.md`) always go in their own `chore(wiki):` cluster, never bundled into `feat(research):`.
+1. Do not add draft paths to `wiki/index.md`, domain indexes, `wiki/hot.md`, or `wiki/dashboard.md`; unreviewed research is not canonical project evidence.
+2. Do not create a wiki log entry for observation-only or draft-only output. The observation/candidate ledgers and research queue carry that provisional history.
+3. If queue-driven, mark the active row `done`, set `finished`/`updated`, and link the synthesis draft plus observation/candidate IDs. Re-run the DAG lint.
+4. Add one pending-commit proposal containing only files actually changed by this run. Keep coordinator files out unless canonical consolidation changed them.
+5. Hand the candidate set to `wiki-consolidate`. Promotion, evidence merges, disputes, expiry, and canonical navigation happen there—not inside autoresearch.
 
 ---
 
 ## Report to User
 
-After filing everything:
-
-```
+```text
 Research complete: [Topic]
-
-Rounds: N | Searches: N | Pages created: N
-
-Created:
-  wiki/questions/Research: [Topic].md (synthesis)
-  wiki/sources/[Source 1].md
-  wiki/concepts/[Concept 1].md
-  wiki/entities/[Entity 1].md
-
-Key findings:
-- [Finding 1]
-- [Finding 2]
-- [Finding 3]
-
-Open questions filed: N
+Rounds: N | Searches: N | Sources processed: N
+Observations: N | Candidates: no_op N, evidence N, update N, dispute N, promote N, recent_only N, reject N
+Draft synthesis: wiki/meta/draft-.../questions/research-....md
+Canonical pages created: 0
+Canonical pages updated: 0
+Next: review/promote with wiki-consolidate
 ```
+
+If consolidation happened in the same explicitly requested run, replace the zero counts with the exercised changes and report every affected page.
 
 ---
 
