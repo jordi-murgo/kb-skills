@@ -56,8 +56,19 @@ INVERSES = {
     "contradicts": "contradicted_by", "contradicted_by": "contradicts",
 }
 
-LINK = re.compile(r"\[\[([^\]|#]+)")
+WIKILINK = re.compile(r"\[\[([^\]|#]+)")
 
+
+def link_text_key(text: str) -> str:
+    """Canonical node id for a wikilink target as written (stem, lowercased)."""
+    raw = text.strip()
+    if raw.endswith(".md"):
+        raw = raw[:-3]
+    return Path(raw).name.lower()
+
+
+def page_key(relpath: Path | str) -> str:
+    return Path(relpath).stem.lower()
 
 def find_vault_root() -> Path:
     """Walk up for the vault root: wiki/ AND .git, and wiki/ is not a skill.
@@ -95,13 +106,36 @@ def parse_frontmatter(text: str) -> dict:
         if not line.startswith((" ", "\t")):
             if ":" in line:
                 key, _, value = line.partition(":")
-                fields[key.strip()] = value.strip()
+                fields[key.strip()] = value.strip().strip("'\"")
     return fields
 
 
 def page_title(meta: dict, path: Path) -> str:
     title = meta.get("title", "").strip()
     return title or path.stem
+
+
+def resolve_page(args_page: str, pages: dict[str, dict]) -> str | None:
+    """Accept any spelling the user might write: title, filename stem, path.
+
+    Body links spell targets by stem far more often than by frontmatter title
+    (measured in vulcano-kb: `[[backend-lenguaje-vulcano]]`, never the title),
+    so `reverse backend-lenguaje-vulcano` must land on the page titled
+    "Arquitectura de implementación — ...". Without this alias the query
+    answered [] on every real vault.
+    """
+    if args_page in pages:
+        return args_page
+    for title, page in pages.items():
+        if page["key"] == args_page.lower():
+            return title
+        if page_key(page["path"]) == link_text_key(args_page):
+            return title
+    # case-insensitive title match as a last resort
+    for title in pages:
+        if title.lower() == args_page.lower():
+            return title
+    return None
 
 
 def load_pages() -> dict[str, dict]:
@@ -119,11 +153,46 @@ def load_pages() -> dict[str, dict]:
             target_m = re.search(r"target:\s*\"?\[\[([^\]]+)\]\]", entry)
             if type_m and target_m:
                 relations.append((type_m.group(1), target_m.group(1).strip()))
+        # Body wikilinks: the untyped edges readers actually follow. Resolved
+        # like wiki-search resolves them (stem + frontmatter title onto one
+        # node id), so `[[Real Title]]` and filename-different.md are the same
+        # node. 0 pages in any production vault declare typed relations:, so
+        # without these the `graph`/`reverse` queries answer {} everywhere
+        # (measured: 2,263 body links in vulcano-kb produced an empty graph).
+        body = text
+        if body.startswith("---"):
+            end = body.find("\n---", 3)
+            if end != -1:
+                body = body[end + 4 :]
+        body_links = sorted({link_text_key(t) for t in WIKILINK.findall(body)})
         pages[page_title(meta, md)] = {
             "path": md,
             "relations": relations,
+            "body_links": body_links,
+            "key": page_key(md),
         }
     return pages
+
+
+
+def body_edges(pages: dict[str, dict]) -> list[tuple[str, str]]:
+    """Resolved body-wikilink edges as (source_title, target_title)."""
+    by_key = {page["key"]: title for title, page in pages.items()}
+    # A link may spell the target as its stem, its path, or its frontmatter
+    # title; resolve onto node keys, then back to titles for reporting.
+    resolve: dict[str, str] = {}
+    for title, page in pages.items():
+        resolve[page_key(page["path"])] = page["key"]
+        if title:
+            resolve[link_text_key(title)] = page["key"]
+    edges = []
+    for title, page in pages.items():
+        for target_key in page["body_links"]:
+            resolved = resolve.get(target_key, target_key)
+            target_title = by_key.get(resolved, target_key)
+            if target_title != title:
+                edges.append((title, target_title))
+    return edges
 
 
 def lint(pages: dict[str, dict]) -> list[dict]:
@@ -187,10 +256,23 @@ def main(argv=None) -> int:
 
     if args.mode == "graph":
         # adjacency list: all, or one page's neighborhood to --depth
+        typed_out = {title: [
+            {"type": t, "target": tg} for t, tg in page["relations"]
+        ] for title, page in pages.items() if page["relations"]}
+        body = body_edges(pages)
+        body_adj: dict[str, list[str]] = {}
+        for src, dst in body:
+            body_adj.setdefault(src, []).append(dst)
+            body_adj.setdefault(dst, []).append(src)
         if args.page:
+            # one page's neighbourhood to --depth, over BOTH edge sets
+            resolved = resolve_page(args.page, pages)
+            if resolved is None:
+                print(f"error: no page titled '{args.page}'", file=sys.stderr)
+                return 2
             edges = reverse_edges(pages)
-            seen = {args.page}
-            frontier = [args.page]
+            seen = {resolved}
+            frontier = [resolved]
             for _ in range(args.depth):
                 nxt = []
                 for node in frontier:
@@ -202,12 +284,18 @@ def main(argv=None) -> int:
                         if src not in seen:
                             seen.add(src)
                             nxt.append(src)
+                    for neighbour in body_adj.get(node, []):
+                        if neighbour not in seen:
+                            seen.add(neighbour)
+                            nxt.append(neighbour)
                 frontier = nxt
-            print(json.dumps({args.page: sorted(seen)}, ensure_ascii=False, indent=2))
+            print(json.dumps({resolved: sorted(seen - {resolved})}, ensure_ascii=False, indent=2))
         else:
-            out = {title: [
-                {"type": t, "target": tg} for t, tg in page["relations"]
-            ] for title, page in pages.items() if page["relations"]}
+            out = {
+                "typed": typed_out,
+                "body": {title: sorted(neighbours) for title, neighbours in body_adj.items()},
+                "body_edge_count": len(body),
+            }
             print(json.dumps(out, ensure_ascii=False, indent=2))
         return 0
 
@@ -215,15 +303,24 @@ def main(argv=None) -> int:
         if not args.page:
             print("usage: reverse PAGE", file=sys.stderr)
             return 2
+        resolved = resolve_page(args.page, pages)
+        if resolved is None:
+            print(f"error: no page titled '{args.page}'", file=sys.stderr)
+            return 2
         edges = reverse_edges(pages)
-        incoming = [
-            {"from": src, "type": t} for src, t in edges.get(args.page, [])
+        incoming_typed = [
+            {"from": src, "type": t} for src, t in edges.get(resolved, [])
         ]
-        print(json.dumps({args.page: incoming}, ensure_ascii=False, indent=2))
+        incoming_body = sorted({
+            src for src, dst in body_edges(pages) if dst == resolved
+        })
+        print(json.dumps({
+            resolved: {
+                "typed": incoming_typed,
+                "body": incoming_body,
+            }
+        }, ensure_ascii=False, indent=2))
         return 0
-
-    return 2
-
 
 if __name__ == "__main__":
     sys.exit(main())
