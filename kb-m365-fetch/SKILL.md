@@ -72,6 +72,20 @@ just that module. One greedy scope takes down the whole fetch.
   `GET /shares/{shareId}/driveItem/content`. `Files.Read.All` is **not** needed
   and is often admin-blocked — do not add it.
 
+### Attachment bytes: `ContentBytes` is empty for most files
+
+`GET /messages/{id}/attachments` returns **metadata only** for file and
+reference attachments above a size threshold: `ContentBytes` comes back null
+while `Size` is correct. Decoding it blindly fails, and skipping it silently
+loses every real attachment — the module reported "0 attachments" for months
+while the emails plainly had PDFs.
+
+The module now does both: it decodes `ContentBytes` when present, and otherwise
+fetches `GET /users/{user}/messages/{id}/attachments/{attId}/$value`, which
+always returns the raw bytes. `graph-fetch.ps1` prints which path it used, so a
+run that silently only ever shows `$value` means the listing endpoint stopped
+inlining bytes again.
+
 Enabling `sharepoint` also requires `sharepoint.site_host` and
 `sharepoint.site_path`, which are empty by default.
 

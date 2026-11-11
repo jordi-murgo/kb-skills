@@ -355,19 +355,47 @@ if ($ModuleSet["attachments"] -and $projectEmails.Count -gt 0) {
             try {
                 $atts = Get-MgUserMessageAttachment -UserId $Me.Account -MessageId $e.Id -All
                 foreach ($att in $atts) {
-                    if ($att.Size -gt 0 -and $att.ContentBytes) {
-                        $safeName = $att.Name -replace '[^\w\.\-]', '_'
-                        $attPath = Join-Path $AttachDir "$Timestamp-$safeName"
-                        $bytes = [Convert]::FromBase64String($att.ContentBytes)
-                        [System.IO.File]::WriteAllBytes($attPath, $bytes)
-                        $downloadedAttachments += [PSCustomObject]@{
-                            EmailSubject = $e.Subject
-                            Name = $att.Name
-                            Size = $att.Size
-                            Path = $attPath
+                    # Inline images are message chrome, not deliverables.
+                    if ($att.ContentType -and $att.ContentType -match '^image/') { continue }
+                    if (-not $att.Name -or $att.Size -le 0) { continue }
+
+                    $safeName = $att.Name -replace '[^\w\.\-]', '_'
+                    $attPath = Join-Path $AttachDir "$Timestamp-$safeName"
+                    $fromBase64 = $false
+
+                    # Preferred path: ContentBytes in the listing response.
+                    if ($att.ContentBytes) {
+                        try {
+                            $bytes = [Convert]::FromBase64String($att.ContentBytes)
+                            [System.IO.File]::WriteAllBytes($attPath, $bytes)
+                            $fromBase64 = $true
+                        } catch {
+                            Write-Host "    Warning: bad ContentBytes for $safeName, falling back to /`$value" -ForegroundColor DarkYellow
                         }
-                        Write-Host "    Downloaded: $safeName ($($att.Size) bytes)" -ForegroundColor DarkGray
                     }
+
+                    # Fallback: GET .../attachments/{id}/$value. The listing endpoint
+                    # returns metadata only for reference/file attachments beyond a
+                    # size threshold, so ContentBytes can be silently empty.
+                    if (-not $fromBase64) {
+                        $uri = "https://graph.microsoft.com/v1.0/users/$($Me.Account)/messages/$($e.Id)/attachments/$($att.Id)/`$value"
+                        try {
+                            Invoke-MgGraphRequest -Method GET -Uri $uri -OutputFilePath $attPath -ErrorAction Stop | Out-Null
+                        } catch {
+                            Write-Host "    Warning: could not download $safeName : $($_.Exception.Message.Substring(0, [Math]::Min(120, $_.Exception.Message.Length)))" -ForegroundColor DarkYellow
+                            continue
+                        }
+                    }
+
+                    $size = (Get-Item $attPath).Length
+                    $downloadedAttachments += [PSCustomObject]@{
+                        EmailSubject = $e.Subject
+                        Name = $att.Name
+                        Size = $size
+                        Path = $attPath
+                    }
+                    $mode = if ($fromBase64) { "ContentBytes" } else { "`$value" }
+                    Write-Host "    Downloaded: $safeName ($size bytes, $mode)" -ForegroundColor DarkGray
                 }
             } catch {
                 Write-Host "    Warning: could not fetch attachments for: $($e.Subject)" -ForegroundColor DarkYellow
