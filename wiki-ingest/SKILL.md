@@ -185,7 +185,7 @@ For 30+ sources, checkpoint every 10 sources. Never parallelize canonical writes
 
 ## Contradictions
 
-Resolve apparent conflicts by date, validity interval, and scope before calling them contradictions. If still incompatible, use `hold_dispute`: keep the candidate pending and add this to the owning canonical page:
+Resolve apparent conflicts by date, validity interval, and scope before calling them contradictions. When a newer source resolves a state that an older wiki page recorded as pending (e.g., a ticket moves from "pending approval" in an early meeting to `Resolution: Listo` in a later Jira export), update or link the older page forward (`[[newer-page]]`) so historical snapshots do not masquerade as current state. If two claims remain incompatible for the same date/scope, use `hold_dispute`: keep the candidate pending and add this to the owning canonical page:
 
 ```markdown
 > [!contradiction] Held candidate cand-0123456789abcdef
@@ -222,6 +222,7 @@ Cite the source for each sourced claim inline, so `wiki-lint` (`lint-citations.p
 - Put the marker at the end of the sentence or bullet it supports. Do not put markers inside fenced code.
 - Only cite line ranges you have read in the `.raw/` file. Do not guess line numbers.
 - Cited sources must be tracked in `.raw/.manifest.json` with their hash recorded at ingest time (see Delta Tracking). The stale-citations gate in `wiki-lint` (`lint-stale-citations.py`) flags pages citing sources whose file changed on disk after ingest or that were never recorded — on a hash change, re-run ingest for that source, then re-validate the citations pointing at it.
+- **Preserve table pagination and completeness bounds.** Before writing a row count in a heading (`## Valoraciones (10)`) or a closed sum (`Coste total: X €`), check the raw source around the table for pagination footers (`Total items N`, `Items per page M`, `1 2 ...`, or truncated exports). When $M < N$ rows are captured, title the section `(M de N capturadas)` and label any sum as a **partial sum over captured rows**, never as the complete total.
 
 ---
 

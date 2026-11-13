@@ -462,6 +462,19 @@ def split_sections(text, title):
     return sections
 
 
+TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{2,}:?\s*\|)+\s*:?-{2,}:?\s*\|?\s*$")
+
+
+def first_markdown_table_header(text: str) -> str | None:
+    """Return the first two-line Markdown table header (`| col |` + `|---|`) in `text`."""
+    lines = text.splitlines()
+    for idx in range(len(lines) - 1):
+        first, second = lines[idx].strip(), lines[idx + 1].strip()
+        if "|" in first and TABLE_SEPARATOR_RE.match(second):
+            return f"{lines[idx]}\n{lines[idx + 1]}"
+    return None
+
+
 def hard_split(body, limit=MAX_CHUNK_CHARS):
     if len(body) <= limit:
         return [body]
@@ -475,6 +488,12 @@ def hard_split(body, limit=MAX_CHUNK_CHARS):
         rest = rest[cut:].lstrip()
     if rest:
         parts.append(rest)
+    table_header = first_markdown_table_header(parts[0])
+    if table_header:
+        for idx in range(1, len(parts)):
+            first_line = parts[idx].splitlines()[0].lstrip() if parts[idx].splitlines() else ""
+            if first_line.startswith("|") and not first_markdown_table_header(parts[idx]):
+                parts[idx] = f"{table_header}\n{parts[idx]}"
     return parts
 
 
@@ -565,8 +584,15 @@ def chunk_page(relpath, text):
     for heading, body in out:
         if not body:
             continue
-        for i, part in enumerate(hard_split(body)):
-            prefix = heading if i == 0 else f"{heading} (cont.)"
+        parts = hard_split(body)
+        total = len(parts)
+        for i, part in enumerate(parts):
+            if total == 1:
+                prefix = heading
+            elif i == 0:
+                prefix = f"{heading} [chunk 1/{total}]"
+            else:
+                prefix = f"{heading} (cont. [chunk {i + 1}/{total}])"
             chunks.append((heading, f"{prefix}\n{part}"))
     return chunks
 
@@ -1207,6 +1233,19 @@ def rank_chunks(conn, backend, qtext, mode, model, dims):
     return ranked, bm25_list, vec_list, effective, notes
 
 
+def page_dates_from_text(text: str) -> tuple[str | None, str | None]:
+    """Extract (page_date, updated) from frontmatter scalars."""
+    updated = frontmatter_scalar(text, "updated")
+    page_date = (
+        frontmatter_scalar(text, "fecha")
+        or frontmatter_scalar(text, "decision_date")
+        or frontmatter_scalar(text, "date_published")
+        or frontmatter_scalar(text, "fetched")
+        or frontmatter_scalar(text, "created")
+    )
+    return page_date, updated
+
+
 def query_canonical(args, qtext):
     """Run the existing indexed query and always close its read connection."""
     conn = connect_readonly()
@@ -1239,8 +1278,38 @@ def query_canonical(args, qtext):
                     chunk_ids,
                 )
             }
+            key_to_path = {
+                page_key(relpath): relpath
+                for (relpath,) in conn.execute("SELECT path FROM pages")
+            }
+            page_meta_cache: dict[str, tuple[str | None, str | None, list[str]]] = {}
             for rank, (chunk_id, score) in enumerate(ranked, 1):
                 _, path, heading, seq, text = rows[chunk_id]
+                if path not in page_meta_cache:
+                    page_date, updated = None, None
+                    try:
+                        raw_page = (VAULT_ROOT / path).read_text(
+                            encoding="utf-8", errors="replace"
+                        )
+                        page_date, updated = page_dates_from_text(raw_page)
+                    except OSError:
+                        pass
+                    node_key = page_key(path)
+                    neighbour_keys = [
+                        row[0]
+                        for row in conn.execute(
+                            "SELECT dst FROM links WHERE src=?"
+                            " UNION SELECT src FROM links WHERE dst=?"
+                            " ORDER BY 1",
+                            (node_key, node_key),
+                        )
+                        if row[0] != node_key
+                    ]
+                    linked_pages = [
+                        key_to_path.get(k, k) for k in neighbour_keys[:12]
+                    ]
+                    page_meta_cache[path] = (page_date, updated, linked_pages)
+                page_date, updated, linked_pages = page_meta_cache[path]
                 item = {
                     "rank": rank,
                     "score": round(score, 6),
@@ -1248,6 +1317,9 @@ def query_canonical(args, qtext):
                     "heading": heading,
                     "seq": seq,
                     "snippet": snippet(text),
+                    "page_date": page_date,
+                    "updated": updated,
+                    "linked_pages": linked_pages,
                 }
                 if chunk_id in bm25_map:
                     item["bm25_rank"] = bm25_map[chunk_id][0]
@@ -1280,10 +1352,19 @@ def print_canonical_results(results):
             tags.append(f"bm25#{item['bm25_rank']}")
         if "vector_rank" in item:
             tags.append(f"vec#{item['vector_rank']}")
+        if item.get("page_date"):
+            tags.append(f"date:{item['page_date']}")
         tag = ("  [" + " ".join(tags) + "]") if tags else ""
         print(f"{item['rank']}. {item['page']} — {item['heading']}  (score {item['score']}){tag}")
         print(f"   {item['snippet']}")
-
+        if item.get("linked_pages"):
+            shown = ", ".join(item["linked_pages"][:5])
+            more = (
+                f" (+{len(item['linked_pages']) - 5} more)"
+                if len(item["linked_pages"]) > 5
+                else ""
+            )
+            print(f"   links: {shown}{more}")
 
 def print_recent_results(results):
     if not results:

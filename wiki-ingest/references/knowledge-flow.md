@@ -120,6 +120,8 @@ when it owns durable knowledge that cannot be represented clearly on an existing
    `no_op` is also `applied`; `recent_only` remains `pending` until expiry or promotion;
    `reject` uses `rejected`.
 7. Preserve raw citations on every changed factual sentence.
+8. When a newly ingested source supersedes a dated status on an existing page (e.g. approval granted after an earlier "not approved" meeting note), add a dated forward link on the older page (`[[newer-source-or-entity]]`) or update the owning entity page so retrieval on the older snapshot surfaces the resolution.
+9. When extracting or summarizing tables from `.raw/**`, inspect the lines immediately following the table for pagination or truncation markers (`Total items N`, `Items per page M`). Never publish a partial page of rows as the full count or full sum.
 
 An ingest that yields only `no_op`, `recent_only`, or `reject` changes no wiki page, index, hot
 cache, dashboard, or wiki log. It may update `.raw/.manifest.json` and the derived ledgers. Report

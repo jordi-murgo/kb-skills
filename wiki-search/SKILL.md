@@ -54,9 +54,13 @@ Read [Index commands and configuration](references/index.md) before using the en
 
 1. Read hot. In quick mode, use it only when sufficient; otherwise offer standard retrieval.
 2. For standard/deep, query `--scope all`. Do not silently rebuild a missing/stale canonical index: `all` still returns recent observations and reports canonical unavailability.
-3. Read canonical candidate pages and raw evidence behind recent candidates. Standard follows useful links to depth 2; deep widens with `--top 16` and reads every relevant result.
+3. Read canonical candidate pages and raw evidence behind recent candidates. Standard follows useful links to depth 2 — including the `linked_pages` (graph neighbours) and `page_date` returned per canonical hit, so an older meeting note or draft is checked against newer linked tickets/resolutions before answering; deep widens with `--top 16` and reads every relevant result.
 4. Synthesize two labelled sections when recent information matters: **Consolidated knowledge** and **Recent provisional information**. Explain conflicts, validity dates, and gaps; cite canonical pages and raw provenance.
-5. Offer filing only for durable synthesis. If authorized, read [Answer filing and navigation](references/answers.md), write the cited question page, and maintain navigation/state once.
+5. Enforce **sufficiency and abstention gates** before stating totals, counts, or current status:
+   - **Exact entity identity**: never transfer a budget, count, or status from a related entity/ticket (`DEM-*`, `PRJ-*`) to the queried one (`PPR-*`).
+   - **Set completeness before arithmetic**: compute or state a closed total/count only when the source confirms all rows are present ($k = N$). If a table is paginated (`Total items N | Items per page M` with $M < N$), truncated across chunks (`[chunk i/N]`), or incomplete, abstain from the full total, report the partial sum explicitly as partial, and name the missing rows.
+   - **Temporal and status precision**: a newer dated resolution supersedes an earlier "not yet approved" snapshot; a target date with a declared delivery risk remains the active target date (with risk) unless explicitly cancelled or replaced; distinguish `sent` replies from `draft` proposals.
+6. Offer filing only for durable synthesis. If authorized, read [Answer filing and navigation](references/answers.md), write the cited question page, and maintain navigation/state once.
 
 ## Output
 
