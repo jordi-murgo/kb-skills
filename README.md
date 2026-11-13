@@ -41,7 +41,9 @@ kb-skills/
 │   └── scripts/
 ├── kb-jira-sync/            ← refresh raw Jira data
 │   └── scripts/
-└── kb-m365-fetch/           ← pull mail / Teams / SharePoint
+├── kb-m365-fetch/           ← pull corporate mail / Teams / SharePoint (Graph)
+│   └── scripts/
+└── kb-gmail-fetch/          ← pull personal @gmail.com mail (gws, Gmail API)
     └── scripts/
 ```
 
@@ -123,8 +125,8 @@ not duplicate log entries. Those state views are written by the AI agent
 following the injected instructions, not by a generator: no script rewrites
 `wiki/**` prose. The two deliberate exceptions are content-producing pipelines
 that write **source material** into `.raw/` (`kb-jira-sync`, `kb-m365-fetch`,
-`doc-pipeline`) and `run-lint.py`'s report under `wiki/meta/` (suppress with
-`--no-report`).
+`kb-gmail-fetch`, `doc-pipeline`) and `run-lint.py`'s report under
+`wiki/meta/` (suppress with `--no-report`).
 
 ## Configuration
 
@@ -143,6 +145,7 @@ self-documented there, including which skill consumes it. Copy it to
 | `jira` | `kb-jira-sync` — base URL, project key, output dir |
 | `wiki_publish` | `kb-publish` — wiki repo, branch, target platform, VPN precondition |
 | `m365` | `kb-m365-fetch` — modules, output paths, time window |
+| `gmail` | `kb-gmail-fetch` — Gmail search keywords, excludes, window, body mode |
 | `tags` | `wiki-lint` — allowed tag vocabulary + aliases (opt-in) |
 | `layout` | `wiki-lint` — type↔folder mapping for misplaced pages (opt-in) |
 
@@ -259,5 +262,5 @@ second brain, based on Karpathy's LLMWiki pattern.
 | `doc-pipeline` | `doc-pipeline/` | Document → markdown conversion |
 | `obsidian-markdown` | `wiki-markdown/` | Renamed; documents wiki markdown conventions (wikilinks, callouts, frontmatter) |
 
-The `kb-*` skills (`kb-setup`, `kb-jira-sync`, `kb-m365-fetch`, `kb-publish`)
-are original to this repo.
+The `kb-*` skills (`kb-setup`, `kb-jira-sync`, `kb-m365-fetch`,
+`kb-gmail-fetch`, `kb-publish`) are original to this repo.

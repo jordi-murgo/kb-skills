@@ -83,6 +83,54 @@ m365:
     top: 100
     chat_limit: 50
 
+# --- personal Gmail mailbox (kb-gmail-fetch) ---
+# Sibling of `m365` above, not an alternative: different mailbox, different
+# identity provider (Google OAuth vs Entra ID), disjoint material. Congress
+# invitations, CFP calls and community threads reach a personal @gmail.com
+# address and never appear in corporate mail, so a vault that only runs
+# kb-m365-fetch silently misses them. Run both when coverage matters.
+gmail:
+  enabled: false
+
+  # Gmail search syntax. OR-joined into one query, then scoped by window.days.
+  # Quote multi-word terms in YAML for readability only — the script re-quotes
+  # anything containing a space, because YAML drops the quotes and an unquoted
+  # `OR black hat OR` makes Gmail return zero results with no error.
+  keywords:
+    - rootedcon
+    - defcon
+    - "call for papers"
+    - cfp
+    - keynote
+    - speaker
+
+  window:
+    days: 365
+    # Hard cap on messages inspected. Never scan the whole mailbox: a real
+    # account holds hundreds of thousands of messages.
+    max_messages: 300
+    # gws --page-all stops at 10 pages by default, silently truncating a broad
+    # query. Raise it when the window matters.
+    page_limit: 10
+
+  # Notification digests quote every keyword in their bodies and would swamp
+  # the page budget. Use domains, not addresses: LinkedIn alone sends from a
+  # dozen *-noreply@ subdomains.
+  exclude:
+    senders:
+      - linkedin.com
+      - glassdoor.com
+      - medium.com
+      - github.com
+      - substack.com
+
+  # snippet = headers + preview (cheap). full = base64url bodies decoded, with
+  # HTML flattened and script/style stripped.
+  body: snippet
+
+  output:
+    dir: .raw/gmail
+
 # --- vault tooling (wiki-search / wiki-vetting) ---
 # Optional: without these sections everything targets a local Ollama on
 # 127.0.0.1:11434. Values support ${VAR} and ${VAR:-default} macros expanded

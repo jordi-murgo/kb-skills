@@ -50,9 +50,9 @@ consume copies; changes that benefit every project belong here.
    (indexes, mirrors, scan state) goes to `.cache/` — it is a cache and must be
    deletable at any time. Two deliberate exceptions, both content-producing
    pipelines rather than derived state: the acquirers (`kb-jira-sync`,
-   `kb-m365-fetch`, `doc-pipeline`) write fetched/rendered source into `.raw/`,
-   and `run-lint.py` writes its human-readable report to `wiki/meta/` (suppress
-   with `--no-report`). Nothing else writes those trees.
+   `kb-m365-fetch`, `kb-gmail-fetch`, `doc-pipeline`) write fetched/rendered
+   source into `.raw/`, and `run-lint.py` writes its human-readable report to
+   `wiki/meta/` (suppress with `--no-report`). Nothing else writes those trees.
 
 ## System One decision endpoints (wiki-vetting, wiki-git-ingest)
 

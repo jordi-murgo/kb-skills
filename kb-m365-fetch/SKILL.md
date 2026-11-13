@@ -11,6 +11,12 @@ allowed-tools: Read Bash Grep Glob
 
 # kb-m365-fetch: Pull M365 Context into `.raw/`
 
+This skill reads the **corporate** Microsoft 365 mailbox. A personal
+`@gmail.com` address is a different mailbox, a different identity provider and
+different material — it is covered by `kb-gmail-fetch`. Run both when brand or
+project coverage has to be complete: congress invitations and CFP calls reach
+the personal address and never appear here.
+
 Two paths, and they are not interchangeable:
 
 | Path | Script | Nature |
