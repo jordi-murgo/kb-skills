@@ -84,6 +84,7 @@ CHECKS = [
     ("lint-stale-citations.py", "Stale Citations"),
     ("lint-tag-taxonomy.py", "Tag Vocabulary"),
     ("lint-misplaced-pages.py", "Misplaced Pages"),
+    ("lint-path-citations.py", "Path Citations"),
 ]
 
 

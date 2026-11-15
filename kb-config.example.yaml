@@ -283,3 +283,14 @@ repos:
 #    decision: [decisions]
 #    entity: [entities]
 #  require_type: true
+
+# --- path citations (wiki-lint: lint-path-citations) ---
+# Optional: a backticked vault path in page body text must resolve on disk.
+# Only tokens whose FIRST segment is an existing top-level directory of the
+# vault are checked, so a bare filename belonging to another repository
+# (Constants.java) is never a finding. All three keys are optional.
+#
+#path_citations:
+#  folders: [scripts, wso2, .raw]   # restrict to these top-level dirs
+#  extensions: [yaml, py, java]     # restrict to these file extensions
+#  ignore: ["scripts/generated/"]   # path prefixes exempt from the check
