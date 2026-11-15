@@ -8,6 +8,10 @@ allowed-tools: Read Write Edit
 
 Reference this skill when writing any wiki page. The wiki extends standard Markdown with wikilinks, embeds, callouts, and YAML frontmatter. Getting syntax wrong causes broken links, invisible callouts, or malformed frontmatter.
 
+This skill owns markdown syntax, not the words. For prose style — removing AI
+tells, STE-80 sentence structure, Spanish/Catalan tell lists — use `wiki-prose`
+and its `scripts/prose_check.py` checker.
+
 ---
 
 ## Wikilinks

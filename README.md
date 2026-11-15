@@ -18,7 +18,7 @@ kb-skills/
 ├── wiki-ingest/             ← add a source to the vault
 ├── wiki-lint/               ← health check + deterministic gates
 │   └── scripts/             ← run-lint.py aggregator + ten lint-*.py checks
-├── wiki-fold/  wiki-issues/  wiki-markdown/
+├── wiki-fold/  wiki-issues/  wiki-markdown/  wiki-prose/
 ├── wiki-search/             ← canonical + immediate recent retrieval
 │   └── scripts/             ← wiki-search.py; data in .cache/wiki-search/
 ├── wiki-consolidate/        ← promote/merge/dispute/expire candidates
@@ -264,3 +264,8 @@ second brain, based on Karpathy's LLMWiki pattern.
 
 The `kb-*` skills (`kb-setup`, `kb-jira-sync`, `kb-m365-fetch`,
 `kb-gmail-fetch`, `kb-publish`) are original to this repo.
+
+`wiki-prose` is original to this repo; its method and checker adapt
+[Dodaios/ste80-humanizer](https://github.com/Dodaios/ste80-humanizer) (MIT)
+and [blader/humanizer](https://github.com/blader/humanizer) (MIT), with the
+Spanish/Catalan tell lists written here.
