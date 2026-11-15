@@ -95,6 +95,13 @@ class VaultCase(unittest.TestCase):
         result = self.run_lint()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_ellipsis_placeholder_path_is_ignored(self):
+        # Vulcano-kb writes `workspaces/.../outputs/index.html` as prose
+        # shorthand; the ellipsis marks it as a placeholder, not a path.
+        self.page("Identical to `workspaces/.../outputs/index.html`.")
+        result = self.run_lint()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_repeated_path_reports_every_reference(self):
         self.file("wso2/other.yaml")
         (self.vault / "wso2" / "contract.yaml").unlink(missing_ok=True)

@@ -173,6 +173,8 @@ def candidate_paths(line: str):
             continue
         if any(ch in SKIP_CHARS for ch in token):
             continue
+        if ".." in token:
+            continue  # "../x" relative or "a/.../b" placeholder, not a real path
         if token.endswith("/"):
             continue
         yield token
