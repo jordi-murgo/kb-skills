@@ -8,7 +8,7 @@ description: >
   "/brief <task-id>", "audit this brief", "validate brief",
   or when a queue task's brief is missing, is "_to brief_", or carries
   brief_version < 1.
-allowed-tools: Read Write Edit Glob Grep Bash
+allowed-tools: Read Write Edit Glob Grep
 ---
 
 # research-brief: Brief Construction & Audit

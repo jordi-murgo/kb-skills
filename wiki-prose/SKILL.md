@@ -1,7 +1,7 @@
 ---
 name: wiki-prose
 description: "Write wiki prose without AI tells, in English, Spanish or Catalan: rewrite agent-sounding pages, log and hot entries, deliverables and answers into plain, human prose (STE-80 structure). Triggers on: humanize wiki text, remove AI writing, de-AI, sounds robotic, simplify prose, ASD-STE100, STE, tightened deliverable, passiu, gerundis, «cabe destacar», «cal destacar», treure l'estil IA, passiu perifràstic. For markdown syntax (wikilinks, callouts, frontmatter) use wiki-markdown; this skill owns the words."
-allowed-tools: Read Write Edit Grep Glob
+allowed-tools: Read Write Edit Glob Grep Bash
 ---
 
 # wiki-prose: prose without AI tells

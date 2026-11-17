@@ -2,6 +2,7 @@
 name: wiki-git-ingest
 description: "Watch associated UPSTREAM repos (local clones or GitHub releases) and turn their new changelogs/releases into vetted wiki claims. Use wiki-sync instead for staleness of claims about files in this repo. Triggers on: what changed upstream, check watched repos, new releases of llama.cpp, ingest changelog, refresh upstream."
 argument-hint: "repos | scan [--commit] [names...]"
+allowed-tools: Read Write Edit Bash
 ---
 
 # wiki-git-ingest: Upstream Changelog Ingest

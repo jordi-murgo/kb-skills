@@ -2,6 +2,7 @@
 name: wiki-ingest
 description: "Ingest files, URLs, images, or batches into a wiki vault through an observation-first knowledge flow. Extracts cited atomic claims, compares them with canonical and recent knowledge, records provisional observations/candidates, and writes wiki pages only for durable non-duplicate outcomes. Optional `review` flags doubtful URL content before `.raw/` is written. Triggers on: ingest, process this source, add this to the wiki, read and file this, batch ingest, ingest all of these, ingest this url."
 argument-hint: "[file-or-url] [review] [force] Not for converting .docx/.pdf/.pptx sources (use `doc-pipeline`) or saving the current conversation (use `save`)."
+allowed-tools: Read Write Edit Glob Grep Bash WebFetch WebSearch
 ---
 
 # wiki-ingest: Observation-First Source Ingestion

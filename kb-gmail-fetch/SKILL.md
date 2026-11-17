@@ -8,11 +8,7 @@ description: |
   instead of — the corporate mailbox handled by kb-m365-fetch.
   Triggers on: "fetch personal gmail", "pull gmail", "sync gmail",
   "gmail fetch", "correo personal", "/kb-gmail-fetch".
-allowed-tools:
-  - Read
-  - Bash
-  - Grep
-  - Glob
+allowed-tools: Read Bash Grep Glob
 license: MIT
 metadata:
   author: jpmo

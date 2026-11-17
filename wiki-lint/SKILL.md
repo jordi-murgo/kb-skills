@@ -7,6 +7,7 @@ description: >
   "health check", "clean up wiki", "check the wiki", "wiki maintenance",
   "find orphans", "wiki audit".
   Not for fixing the issues it finds (use `wiki-issues`) or answering questions (use `wiki-search`).
+allowed-tools: Read Write Edit Glob Grep Bash
 ---
 
 # wiki-lint: Wiki Health Check

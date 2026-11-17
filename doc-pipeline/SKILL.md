@@ -1,6 +1,7 @@
 ---
 name: doc-pipeline
 description: "Convert source documents (.doc/.docx/.pdf/.pptx/.pptm/.xlsx/.html/...) into ingest-ready Markdown for the wiki vault: raw conversion, quality-control annotations, human approval gate, then a clean file for wiki-ingest. Pre-ingest conversion only — it never files pages into the wiki. Checkworthy facts are flagged, never auto-verified. Triggers on: convert to markdown, doc pipeline, konvertiere für ingest, QC dieses Dokument, ingest-fertig machen."
+allowed-tools: Read Write Edit Glob Bash WebFetch WebSearch Task
 ---
 
 # doc-pipeline: Documents → Ingest-ready Markdown

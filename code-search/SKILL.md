@@ -6,6 +6,7 @@ metadata:
   author: kb-skills
   version: "1.0"
 argument-hint: "doctor | build | status | query TEXT"
+allowed-tools: Read Bash
 ---
 
 # code-search

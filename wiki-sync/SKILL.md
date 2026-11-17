@@ -2,6 +2,7 @@
 name: wiki-sync
 description: "Detect wiki pages whose file-linked claims went stale after commits in THIS repo: scans for repo-file references, compares each file's last commit with the page's updated date. Use wiki-git-ingest instead for changes in watched UPSTREAM repos. Triggers on: sync the wiki, what claims are stale, after commits check wiki, staleness report."
 argument-hint: "[--since] [--commit]"
+allowed-tools: Read Grep Edit Bash
 ---
 
 # wiki-sync: Git-Based Claim Staleness

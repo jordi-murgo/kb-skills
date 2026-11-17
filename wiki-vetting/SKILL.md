@@ -2,6 +2,7 @@
 name: wiki-vetting
 description: "Score atomic claims before canonical knowledge, emit explicit routing actions, and audit independent maturity, verification, decision lifecycle, disputes, and evidence. Triggers on: vet these claims, should this go in the wiki, route candidate, audit verification, lifecycle audit, dispute queue."
 argument-hint: "--claims claims.json | audit"
+allowed-tools: Read Bash
 ---
 
 # wiki-vetting: Claim Vetting and Lifecycle Audit

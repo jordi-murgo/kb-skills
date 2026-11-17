@@ -2,6 +2,7 @@
 name: wiki-search
 description: "Trigger: query:, what do you know about, what is, explain, summarize, based on the wiki, search the wiki, recent information, provisional observations, similar pages, find wiki knowledge. Searches canonical wiki pages (BM25 + vector) and immediate observation ledgers, keeps the two scopes explicit, and answers with citations. For source code, use code-search."
 argument-hint: "query [TEXT] [--scope canonical|recent|all] | build | status; answers: quick | standard | deep"
+allowed-tools: Read Write Edit Glob Grep Bash WebFetch WebSearch
 ---
 
 # wiki-search
