@@ -18,13 +18,60 @@ in deterministic Markdown format. Only overwrites files when content changed
 (git-friendly).
 """
 import base64
+import ipaddress
 import json
 import os
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+
+def validate_endpoint(endpoint: str, *, authenticated: bool) -> str:
+    """Reject unsafe base URLs without echoing the supplied value.
+
+    Only trailing slashes are stripped; path prefixes survive for Data
+    Center/proxy deployments. Userinfo, query and fragment are refused.
+    Authenticated requests require HTTPS unless the host is the literal
+    `localhost` or a loopback IP — no DNS resolution, so a name that merely
+    resolves to loopback does not qualify."""
+    endpoint = endpoint.strip().rstrip("/")
+    parsed = urllib.parse.urlsplit(endpoint)
+    try:
+        port = parsed.port
+    except ValueError:
+        port = -1
+    if (parsed.scheme not in ("http", "https") or not parsed.hostname
+            or parsed.username is not None or parsed.password is not None
+            or parsed.query or parsed.fragment or port in (0, -1)):
+        raise SystemExit(
+            "error: jira.base_url must be an HTTP(S) origin without "
+            "credentials, query or fragment")
+    if authenticated and parsed.scheme != "https":
+        host = parsed.hostname
+        try:
+            loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            loopback = False
+        if not loopback:
+            raise SystemExit(
+                "error: credentials require an HTTPS jira.base_url "
+                "(or a loopback host); refusing to send them over cleartext")
+    return endpoint
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect: the Basic credential must never leave the
+    configured origin, same-origin redirects included."""
+
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        return None
+
+
+def make_opener():
+    return urllib.request.build_opener(NoRedirect())
 
 
 def find_repo_root() -> Path:
@@ -197,26 +244,47 @@ def credential(name: str) -> str:
     return legacy
 
 
+def _jira_failure(error) -> str:
+    """Sanitized failure class: reason type only, never URLs or bodies."""
+    if isinstance(error, urllib.error.URLError) and error.reason is not None:
+        return type(error.reason).__name__
+    return type(error).__name__
+
+
 def api_get(path: str, auth_header: str) -> dict:
-    url = f"{JIRA_BASE}{path}"
+    url = f"{validate_endpoint(JIRA_BASE, authenticated=True)}{path}"
     req = urllib.request.Request(url, headers={
         "Authorization": auth_header,
         "Accept": "application/json",
     })
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with make_opener().open(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        error.close()
+        raise SystemExit(f"error: Jira API returned HTTP {error.code}") from None
+    except (urllib.error.URLError, OSError) as error:
+        raise SystemExit(
+            f"error: Jira API is unreachable ({_jira_failure(error)})") from None
 
 
 def api_post(path: str, body: dict, auth_header: str) -> dict:
-    url = f"{JIRA_BASE}{path}"
+    url = f"{validate_endpoint(JIRA_BASE, authenticated=True)}{path}"
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={
         "Authorization": auth_header,
         "Accept": "application/json",
         "Content-Type": "application/json",
     })
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with make_opener().open(req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        error.close()
+        raise SystemExit(f"error: Jira API returned HTTP {error.code}") from None
+    except (urllib.error.URLError, OSError) as error:
+        raise SystemExit(
+            f"error: Jira API is unreachable ({_jira_failure(error)})") from None
 
 
 def adf_to_markdown(node) -> str:

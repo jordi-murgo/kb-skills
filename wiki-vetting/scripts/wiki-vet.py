@@ -7,12 +7,14 @@ duplicate; reject = sensitive or not grounded; otherwise review.
 """
 
 import argparse
-import os
+import ipaddress
 import json
+import os
 import re
 import socket
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -79,11 +81,13 @@ def expand_macros(value):
     return value
 
 
-def load_config_section(root: Path, section: str) -> dict:
+def load_config_section(root: Path, section: str, *, expand: bool = True) -> dict:
     """Read one optional section of kb-config.{yaml,yml,json} at the vault root.
     Missing file or section -> {}. ${VAR} macros expand from the environment
-    (process env, then .env/.env.local loaded above). Kept inline per the
-    no-shared-import rule: a skill copied on its own must keep working."""
+    (process env, then .env/.env.local loaded above) unless expand=False, which
+    returns the raw values so callers can validate secret *syntax* before any
+    expansion. Kept inline per the no-shared-import rule: a skill copied on
+    its own must keep working."""
     candidates = [root / "kb-config.yaml", root / "kb-config.yml", root / "kb-config.json"]
     path = next((p for p in candidates if p.is_file()), None)
     if path is None:
@@ -111,14 +115,42 @@ def load_config_section(root: Path, section: str) -> dict:
     sec = cfg.get(section) or {}
     if not isinstance(sec, dict):
         raise SystemExit(f"{path}: '{section}' must be a mapping")
+    if not expand:
+        return dict(sec)
     return {k: expand_macros(v) for k, v in sec.items()}
+
+
+_API_KEY_ENV_RE = re.compile(r"\A\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-)?\}\Z")
+
+
+def _configured_api_key_env(raw) -> str | None:
+    """Validate the raw decisions.api_key; return its env-var name or None.
+
+    Only an absent/empty value or a ${VAR} / ${VAR:-} placeholder is accepted.
+    A literal secret, concatenated template, or nonempty default is refused
+    without ever printing the supplied value."""
+    if raw is None or raw == "":
+        return None
+    if not isinstance(raw, str):
+        raise SystemExit(
+            "error: decisions.api_key must reference an environment variable "
+ "without a secret default")
+    match = _API_KEY_ENV_RE.match(raw.strip())
+    if not match:
+        raise SystemExit(
+            "error: decisions.api_key must reference an environment variable "
+            "without a secret default")
+    return match.group(1)
 
 
 REPO_ROOT = find_vault_root()
 load_env_files(REPO_ROOT)
-_CFG = load_config_section(REPO_ROOT, "decisions")
-# Hosted decision services need a bearer token; a local Ollama does not. The
-# key never lives in kb-config.yaml (AGENTS.md rule 2), only in the environment.
+_RAW_CFG = load_config_section(REPO_ROOT, "decisions", expand=False)
+_CONFIGURED_API_KEY_ENV = _configured_api_key_env(_RAW_CFG.get("api_key"))
+_CFG = {k: expand_macros(v) for k, v in _RAW_CFG.items()}
+# Expanded placeholder value, kept only as the module's historical default for
+# internal tests. It is NOT a CLI token channel: the CLI resolves the variable
+# by name after parsing (--api-key-env / _CONFIGURED_API_KEY_ENV).
 _API_KEY = _CFG.get("api_key") or ""
 
 
@@ -225,7 +257,8 @@ def resolve_thresholds(cfg):
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(
-        description="Score atomic wiki claims against a local systemone decision model."
+        description="Score atomic wiki claims against a local systemone decision model.",
+        allow_abbrev=False,
     )
     parser.add_argument(
         "--claims",
@@ -246,13 +279,37 @@ def parse_args(argv):
         " /v1/systemone is appended.",
     )
     parser.add_argument(
-        "--api-key",
-        default=_API_KEY,
-        help="bearer token for a hosted decision endpoint (kb-config"
-        " decisions.api_key, normally ${VAR} from the environment). A local"
-        " Ollama needs none.",
+        "--api-key-env",
+        default=None,
+        metavar="NAME",
+        help="environment variable holding the bearer token for a hosted "
+        "decision endpoint (kb-config decisions.api_key may instead be "
+        "${VAR}). A local Ollama needs none.",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.api_key_env is not None and not re.fullmatch(
+            r"[A-Za-z_][A-Za-z0-9_]*", args.api_key_env):
+        parser.error("--api-key-env must be an environment variable name")
+    return args
+
+
+def reject_literal_api_key_args(argv: list[str]) -> None:
+    """Refuse the removed secret-bearing --api-key before argparse sees it."""
+    for arg in argv:
+        if arg == "--api-key" or arg.startswith("--api-key="):
+            raise SystemExit("error: --api-key is not accepted; use --api-key-env NAME")
+
+
+def resolve_api_key(env_name: str | None) -> str:
+    """Resolve the selected variable by name; empty string means unauthenticated."""
+    if not env_name:
+        return ""
+    value = os.environ.get(env_name, "")
+    if not value:
+        raise SystemExit(
+            f"error: environment variable {env_name} is not set "
+            "(selected for the decision-endpoint bearer token)")
+    return value
 
 
 def load_claims(source):
@@ -346,10 +403,70 @@ def make_payload(chunk, base_index, vault_index, model):
     }
 
 
+def validate_endpoint(endpoint: str, *, authenticated: bool) -> str:
+    """Reject unsafe endpoints without echoing the supplied URL.
+
+    Only trailing slashes are stripped; path prefixes survive for
+    Data Center/proxy deployments. Userinfo, query and fragment are refused.
+    An authenticated endpoint must be HTTPS unless the host is the literal
+    `localhost` or a loopback IP (no DNS resolution: a name that merely
+    resolves to loopback does not qualify)."""
+    endpoint = endpoint.strip().rstrip("/")
+    parsed = urllib.parse.urlsplit(endpoint)
+    try:
+        port = parsed.port
+    except ValueError:
+        port = -1
+    if (parsed.scheme not in ("http", "https") or not parsed.hostname
+            or parsed.username is not None or parsed.password is not None
+            or parsed.query or parsed.fragment or port in (0, -1)):
+        raise SystemExit(
+            "error: decisions.endpoint must be an HTTP(S) URL without "
+            "credentials, query or fragment")
+    if authenticated and parsed.scheme != "https":
+        host = parsed.hostname
+        try:
+            loopback = host == "localhost" or ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            loopback = False
+        if not loopback:
+            raise SystemExit(
+                "error: a bearer token requires an HTTPS endpoint "
+                "(or a loopback host); refusing to send it over cleartext")
+    return endpoint
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect, including same-origin ones."""
+
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        return None
+
+
+def make_opener():
+    return urllib.request.build_opener(NoRedirect())
+
+
 def is_transient_error(exc):
-    if isinstance(exc, (urllib.error.URLError, socket.timeout, TimeoutError)):
+    """HTTPError before URLError: 3xx/4xx are permanent, only 5xx and
+    transport/timeout errors keep the retry budget."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code >= 500
+    if isinstance(exc, (socket.timeout, TimeoutError)):
         return True
-    return isinstance(exc, urllib.error.HTTPError) and exc.code >= 500
+    return isinstance(exc, urllib.error.URLError)
+
+
+def _failure_kind(exc) -> str:
+    """Sanitized failure class: status or error type, never URLs or bodies."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"HTTP {exc.code}"
+    if isinstance(exc, (socket.timeout, TimeoutError)):
+        return "timeout"
+    if isinstance(exc, urllib.error.URLError):
+        reason = type(exc.reason).__name__ if exc.reason is not None else ""
+        return f"transport error ({reason})" if reason else "transport error"
+    return "invalid response"
 
 
 def call_systemone(endpoint, payload, question_ids, api_key=""):
@@ -358,14 +475,16 @@ def call_systemone(endpoint, payload, question_ids, api_key=""):
     `api_key` is optional: a local Ollama endpoint needs none, a hosted one
     (e.g. decision.vllm-sr.ai) rejects the request with 401 without it. Send it
     as a bearer token — the wire contract is otherwise identical, so the same
-    payload works against either."""
+    payload works against either. Redirects are refused so the bearer token
+    can never leave the validated origin."""
     if not endpoint.endswith("/v1/systemone"):
         endpoint = endpoint.rstrip("/") + "/v1/systemone"
+    endpoint = validate_endpoint(endpoint, authenticated=bool(api_key))
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    last_error = None
+    last_error = "unknown failure"
     for attempt in (1, 2):
         try:
             request = urllib.request.Request(
@@ -374,7 +493,7 @@ def call_systemone(endpoint, payload, question_ids, api_key=""):
                 headers=headers,
                 method="POST",
             )
-            with urllib.request.urlopen(request, timeout=300) as response:
+            with make_opener().open(request, timeout=300) as response:
                 result = json.loads(response.read().decode("utf-8"))
             answers = result.get("answers")
             if not isinstance(answers, dict):
@@ -384,10 +503,11 @@ def call_systemone(endpoint, payload, question_ids, api_key=""):
                 if not isinstance(answer, dict) or not isinstance(answer.get("noul"), (int, float)):
                     raise ValueError(f"response is missing a usable noul answer for '{qid}'")
             return {qid: float(answers[qid]["noul"]) for qid in question_ids}
-        except (urllib.error.URLError, urllib.error.HTTPError, socket.timeout, TimeoutError, ValueError, json.JSONDecodeError) as exc:
-            last_error = exc
-            if not is_transient_error(exc) and not isinstance(exc, ValueError):
-                raise SystemExit(f"error: systemone call failed: {exc}")
+        except (urllib.error.URLError, urllib.error.HTTPError, socket.timeout,
+                TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            last_error = _failure_kind(exc)
+            if not is_transient_error(exc):
+                raise SystemExit(f"error: systemone call failed: {last_error}") from None
             if attempt == 2:
                 break
     raise SystemExit(f"error: systemone call failed after retry: {last_error}")
@@ -467,7 +587,11 @@ def routing_action(verdict, bits, signal):
 
 
 def main(argv=None):
+    reject_literal_api_key_args(list(sys.argv[1:] if argv is None else argv))
     args = parse_args(argv)
+    # Selection before resolution: a valid --api-key-env must win even when
+    # the configured variable is unset; no selection means unauthenticated.
+    api_key = resolve_api_key(args.api_key_env or _CONFIGURED_API_KEY_ENV)
     thresholds, band = resolve_thresholds(_CFG)
     source = open(args.claims, encoding="utf-8") if args.claims else sys.stdin
     with source:
@@ -477,7 +601,7 @@ def main(argv=None):
     results = []
     for chunk, base_index, payload in chunk_requests(claims, vault_index, args.model):
         question_ids = list(payload["questions"])
-        answers = call_systemone(args.endpoint, payload, question_ids, args.api_key)
+        answers = call_systemone(args.endpoint, payload, question_ids, api_key)
         for offset, claim in enumerate(chunk):
             cid = f"c{base_index + offset}"
             skip = bool(claim.get("skip_grounded"))

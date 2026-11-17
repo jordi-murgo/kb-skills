@@ -20,7 +20,7 @@ Exit codes:
 """
 
 import argparse
-import json
+import re
 import sys
 from pathlib import Path
 
@@ -102,17 +102,25 @@ def check_floors(metrics):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    _vet.reject_literal_api_key_args(list(sys.argv[1:] if argv is None else argv))
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--set", required=True, help="Labelled JSON array of claims with labels.")
     parser.add_argument("--json", action="store_true", help="Machine-readable output.")
     parser.add_argument("--model", default=_vet._CFG.get("model") or "clef-flash:9b")
     parser.add_argument("--endpoint", default=_vet._CFG.get("endpoint") or "http://127.0.0.1:11434")
     parser.add_argument(
-        "--api-key",
-        default=_vet._API_KEY if hasattr(_vet, "_API_KEY") else "",
-        help="bearer token for a hosted decision endpoint; a local Ollama needs none.",
+        "--api-key-env",
+        default=None,
+        metavar="NAME",
+        help="environment variable holding the bearer token for a hosted "
+        "decision endpoint; a local Ollama needs none.",
     )
     args = parser.parse_args(argv)
+    if args.api_key_env is not None and not re.fullmatch(
+            r"[A-Za-z_][A-Za-z0-9_]*", args.api_key_env):
+        parser.error("--api-key-env must be an environment variable name")
+    # Selection before resolution, mirroring wiki-vet's CLI.
+    api_key = _vet.resolve_api_key(args.api_key_env or _vet._CONFIGURED_API_KEY_ENV)
 
     path = Path(args.set)
     if not path.is_file():
@@ -144,7 +152,7 @@ def main(argv=None):
     vault_index = _vet.load_vault_index()
     results = []
     for chunk, base_index, payload in _vet.chunk_requests(claims, vault_index, args.model):
-        answers = _vet.call_systemone(args.endpoint, payload, list(payload["questions"]), args.api_key)
+        answers = _vet.call_systemone(args.endpoint, payload, list(payload["questions"]), api_key)
         for offset, claim in enumerate(chunk):
             cid = f"c{base_index + offset}"
             skip = bool(claim.get("skip_grounded"))

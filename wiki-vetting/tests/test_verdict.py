@@ -9,8 +9,8 @@ directly, which is where the calibration bug lived. The live-model check lives i
 import importlib.util
 import json
 import unittest
+import urllib.request
 from pathlib import Path
-
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "wiki-vet.py"
 
 
@@ -206,25 +206,76 @@ class CalibrationSetTest(unittest.TestCase):
             self.assertIn("quote", row)
 
 
-class ApiKeyHeaderTest(unittest.TestCase):
-    """`call_systemone` must send a bearer token only when one is configured.
+class FakeResponse:
+    """Minimal urllib response object driving the real handler chain."""
 
-    A hosted System One endpoint (decision.vllm-sr.ai) rejects the request with
-    401 and no useful message without it, while a local Ollama ignores the header.
-    The bug this guards: the function had no `api_key` parameter at all, so
-    `wiki-vetting` could not reach any remote decision service — found by trying
-    to measure d3-turbo through it.
-    """
+    def __init__(self, code, body=b"", headers=None, url="https://source.test/v1/systemone"):
+        import email
+        import io
+
+        self.code = code
+        self.msg = "OK"
+        self.headers = email.message.Message()
+        for key, value in (headers or {}).items():
+            self.headers[key] = value
+        self._buf = io.BytesIO(body)
+        self.url = url
+
+    def read(self, *args):
+        return self._buf.read(*args)
+
+    def geturl(self):
+        return self.url
+
+    def info(self):
+        return self.headers
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def close(self):
+        pass
+
+
+class FakeTransport(urllib.request.HTTPHandler, urllib.request.HTTPSHandler):
+    """In-memory HTTP(S) transport: records requests, serves a script.
+
+    Registered before NoRedirect in a real opener, so redirect handling runs
+    through the production handler chain instead of being faked."""
+
+    def __init__(self, script):
+        super().__init__()
+        self.script = list(script)
+        self.requests = []
+
+    def http_open(self, req):
+        return self._serve(req)
+
+    def https_open(self, req):
+        return self._serve(req)
+
+    def _serve(self, req):
+        self.requests.append((req.get_method(), req.full_url,
+                              dict(req.header_items()), req.data))
+        return self.script.pop(0)
+
+
+class TransportCase(unittest.TestCase):
+    """call_systemone against an in-memory transport; no live requests."""
 
     def setUp(self):
         import os
         import tempfile
 
-        self.vault = Path(tempfile.mkdtemp(prefix="vet-apikey-"))
+        self.vault = Path(tempfile.mkdtemp(prefix="vet-transport-"))
         (self.vault / "wiki").mkdir()
         (self.vault / ".git").mkdir()
         self._cwd = Path.cwd()
         os.chdir(self.vault)
+        self.module = load_module()
 
     def tearDown(self):
         import os
@@ -233,47 +284,232 @@ class ApiKeyHeaderTest(unittest.TestCase):
         os.chdir(self._cwd)
         shutil.rmtree(self.vault, ignore_errors=True)
 
-    def _capture_headers(self, api_key):
-        import builtins
-        import urllib.request
+    def run_call(self, script, endpoint, api_key=""):
+        transport = FakeTransport(script)
+        original = self.module.make_opener
 
-        captured = {}
-        original = urllib.request.urlopen
+        def fake_make_opener():
+            return urllib.request.build_opener(transport, self.module.NoRedirect())
 
-        class FakeResponse:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                return False
-
-            def read(self):
-                return json.dumps(
-                    {"answers": {"q1": {"noul": 0.9}}}
-                ).encode("utf-8")
-
-        def fake_urlopen(request, timeout=None):
-            captured["headers"] = dict(request.headers)
-            return FakeResponse()
-
-        urllib.request.urlopen = fake_urlopen
+        self.module.make_opener = fake_make_opener
         try:
-            module = load_module()
-            module.call_systemone(
-                "http://example.test", {"questions": {"q1": {}}}, ["q1"], api_key
-            )
+            result = self.module.call_systemone(
+                endpoint, {"questions": {"q1": {}}}, ["q1"], api_key)
+            return transport, result, None
+        except SystemExit as exc:
+            return transport, None, str(exc)
         finally:
-            urllib.request.urlopen = original
-        return captured["headers"]
+            self.module.make_opener = original
 
-    def test_no_header_when_no_key(self):
-        headers = self._capture_headers("")
-        self.assertNotIn("Authorization", headers)
+    @staticmethod
+    def ok_body():
+        return json.dumps({"answers": {"q1": {"noul": 0.9}}}).encode()
 
-    def test_bearer_header_when_key_present(self):
-        headers = self._capture_headers("sk-test-123")
-        self.assertEqual(headers.get("Authorization"), "Bearer sk-test-123")
+    def test_bearer_reaches_intended_https_origin_once(self):
+        transport, result, error = self.run_call(
+            [FakeResponse(200, body=self.ok_body())],
+            "https://decision.example", api_key="sk-SENTINEL")
+        self.assertIsNone(error)
+        self.assertEqual(result, {"q1": 0.9})
+        self.assertEqual(len(transport.requests), 1)
+        method, url, headers, _ = transport.requests[0]
+        self.assertEqual(method, "POST")
+        self.assertTrue(url.startswith("https://decision.example/v1/systemone"), url)
+        self.assertEqual(headers.get("Authorization"), "Bearer sk-SENTINEL")
 
+    def test_no_bearer_when_unauthenticated(self):
+        transport, result, _ = self.run_call(
+            [FakeResponse(200, body=self.ok_body())], "https://decision.example")
+        self.assertEqual(result, {"q1": 0.9})
+        self.assertNotIn("Authorization", transport.requests[0][2])
+
+    def test_redirects_refused_for_every_code(self):
+        for code in (301, 302, 303, 307, 308):
+            with self.subTest(code=code):
+                transport, result, error = self.run_call(
+                    [FakeResponse(code, headers={
+                        "Location": "https://evil.test/steal?sk-SENTINEL"})],
+                    "https://decision.example", api_key="sk-SENTINEL")
+                self.assertIsNotNone(error, "redirect must fail closed")
+                self.assertIn(f"HTTP {code}", error)
+                self.assertNotIn("evil.test", error)
+                self.assertNotIn("SENTINEL", error)
+                self.assertNotIn("Location", error)
+                # exactly one request; the redirect target was never contacted
+                self.assertEqual(len(transport.requests), 1)
+                self.assertTrue(
+                    transport.requests[0][1].startswith("https://decision.example"))
+
+    def test_authenticated_remote_http_refused_without_request(self):
+        transport, result, error = self.run_call(
+            [FakeResponse(200, body=self.ok_body())],
+            "http://decision.example", api_key="sk-SENTINEL")
+        self.assertIsNotNone(error)
+        self.assertIn("HTTPS", error)
+        self.assertEqual(transport.requests, [])
+
+    def test_unauthenticated_evo_shaped_http_allowed(self):
+        transport, result, error = self.run_call(
+            [FakeResponse(200, body=self.ok_body())],
+            "http://evo.example.ts.net:11434")
+        self.assertIsNone(error)
+        self.assertEqual(result, {"q1": 0.9})
+        self.assertEqual(len(transport.requests), 1)
+
+    def test_authenticated_loopback_http_allowed(self):
+        transport, result, error = self.run_call(
+            [FakeResponse(200, body=self.ok_body())],
+            "http://127.0.0.1:11434", api_key="sk-SENTINEL")
+        self.assertIsNone(error)
+        self.assertEqual(transport.requests[0][2].get("Authorization"),
+                         "Bearer sk-SENTINEL")
+
+    def test_401_fails_on_first_attempt(self):
+        transport, _, error = self.run_call(
+            [FakeResponse(401)], "https://decision.example", api_key="sk-SENTINEL")
+        self.assertIn("HTTP 401", error)
+        self.assertNotIn("SENTINEL", error)
+        self.assertEqual(len(transport.requests), 1)
+
+    def test_503_uses_two_attempts_then_fails(self):
+        transport, _, error = self.run_call(
+            [FakeResponse(503), FakeResponse(503)],
+            "https://decision.example", api_key="sk-SENTINEL")
+        self.assertIn("after retry", error)
+        self.assertIn("HTTP 503", error)
+        self.assertEqual(len(transport.requests), 2)
+
+    def test_503_then_success_parses_normally(self):
+        transport, result, error = self.run_call(
+            [FakeResponse(503), FakeResponse(200, body=self.ok_body())],
+            "https://decision.example", api_key="sk-SENTINEL")
+        self.assertIsNone(error)
+        self.assertEqual(result, {"q1": 0.9})
+        self.assertEqual(len(transport.requests), 2)
+
+    def test_malformed_endpoints_rejected_without_echo(self):
+        for endpoint in (
+            "https://user:pw@decision.example",
+            "https://decision.example/v1/systemone?x=1",
+            "https://decision.example/v1/systemone#frag",
+            "ftp://decision.example",
+            "https://",
+            "not a url",
+        ):
+            with self.subTest(endpoint=endpoint[:28]):
+                transport, _, error = self.run_call(
+                    [FakeResponse(200, body=self.ok_body())], endpoint,
+                    api_key="sk-SENTINEL")
+                self.assertIsNotNone(error)
+                secret_bits = [part for part in endpoint.split("/")[2:3]]
+                for bit in secret_bits:
+                    if "@" in bit or "?" in endpoint or "#" in endpoint:
+                        self.assertNotIn(bit, error)
+                self.assertIn("error:", error)
+                self.assertEqual(transport.requests, [])
+
+    def test_error_bodies_never_leak(self):
+        transport, _, error = self.run_call(
+            [FakeResponse(500, body=b"sk-SENTINEL leaked body"),
+             FakeResponse(500, body=b"sk-SENTINEL leaked body")],
+            "https://decision.example", api_key="sk-SENTINEL")
+        self.assertIn("HTTP 500", error)
+        self.assertNotIn("SENTINEL", error)
+        self.assertNotIn("leaked", error)
+
+
+class ApiKeySourceTest(unittest.TestCase):
+    """decisions.api_key must be an env reference; CLI selects by name."""
+
+    def setUp(self):
+        import os
+        import tempfile
+
+        self.vault = Path(tempfile.mkdtemp(prefix="vet-keysrc-"))
+        (self.vault / "wiki").mkdir()
+        (self.vault / ".git").mkdir()
+        self._cwd = Path.cwd()
+        self._env = dict(os.environ)
+        os.chdir(self.vault)
+
+    def tearDown(self):
+        import os
+        import shutil
+
+        os.chdir(self._cwd)
+        os.environ.clear()
+        os.environ.update(self._env)
+        shutil.rmtree(self.vault, ignore_errors=True)
+
+    def load_with_config(self, api_key_yaml, env=None):
+        import os
+
+        (self.vault / "kb-config.json").unlink(missing_ok=True)
+        (self.vault / "kb-config.yaml").write_text(
+            f"decisions:\n  api_key: {api_key_yaml}\n", encoding="utf-8")
+        for key in ("VET_TEST_KEY", "OTHER_KEY"):
+            os.environ.pop(key, None)
+        os.environ.update(env or {})
+        return load_module()
+
+    def test_absent_key_is_unauthenticated(self):
+        module = self.load_with_config("''")
+        self.assertIsNone(module._CONFIGURED_API_KEY_ENV)
+        self.assertEqual(module.resolve_api_key(None), "")
+
+    def test_placeholder_records_variable_name(self):
+        module = self.load_with_config("${VET_TEST_KEY}",
+                                       env={"VET_TEST_KEY": "sk-from-env"})
+        self.assertEqual(module._CONFIGURED_API_KEY_ENV, "VET_TEST_KEY")
+        self.assertEqual(module.resolve_api_key("VET_TEST_KEY"), "sk-from-env")
+        self.assertEqual(module._API_KEY, "sk-from-env")
+
+    def test_empty_default_placeholder_accepted(self):
+        module = self.load_with_config("${VET_TEST_KEY:-}")
+        self.assertEqual(module._CONFIGURED_API_KEY_ENV, "VET_TEST_KEY")
+
+    def test_literal_secret_refused_at_load(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self.load_with_config("sk-literal-DO-NOT-PRINT")
+        self.assertIn("environment variable", str(ctx.exception))
+        self.assertNotIn("sk-literal", str(ctx.exception))
+
+    def test_nonempty_default_refused(self):
+        with self.assertRaises(SystemExit):
+            self.load_with_config("${VET_TEST_KEY:-fallback}")
+
+    def test_missing_selected_variable_fails_by_name(self):
+        module = self.load_with_config("${VET_TEST_KEY}")  # variable unset
+        with self.assertRaises(SystemExit) as ctx:
+            module.resolve_api_key("VET_TEST_KEY")
+        self.assertIn("VET_TEST_KEY", str(ctx.exception))
+
+    def test_cli_rejects_removed_option(self):
+        module = self.load_with_config("''")
+        for argv in (["--api-key", "sk-SENTINEL"], ["--api-key=sk-SENTINEL"],
+                     ["--api-key"]):
+            with self.subTest(argv=argv):
+                with self.assertRaises(SystemExit) as ctx:
+                    module.reject_literal_api_key_args(argv)
+                self.assertIn("--api-key-env", str(ctx.exception))
+                self.assertNotIn("SENTINEL", str(ctx.exception))
+
+    def test_cli_selection_wins_over_unset_config_variable(self):
+        module = self.load_with_config("${VET_TEST_KEY}",
+                                       env={"OTHER_KEY": "sk-cli"})
+        args = module.parse_args(["--api-key-env", "OTHER_KEY"])
+        selected = args.api_key_env or module._CONFIGURED_API_KEY_ENV
+        self.assertEqual(module.resolve_api_key(selected), "sk-cli")
+
+    def test_bad_variable_name_rejected(self):
+        module = self.load_with_config("''")
+        with self.assertRaises(SystemExit):
+            module.parse_args(["--api-key-env", "not a name"])
+
+    def test_abbreviations_disabled(self):
+        module = self.load_with_config("''")
+        with self.assertRaises(SystemExit):
+            module.parse_args(["--api-k", "X"])
 
 if __name__ == "__main__":
     unittest.main()
