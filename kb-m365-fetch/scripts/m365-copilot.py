@@ -30,35 +30,129 @@ import base64
 import json
 import os
 import re
+import stat
+import subprocess
 import sys
+import time
+import urllib.parse
 import uuid
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 def find_repo_root() -> Path:
-    """Walk up from this file to the vault root (the directory holding wiki/).
+    """Walk up for the vault root: cwd first, then this file's location.
 
-    This script lives inside a skill, so its depth below the repo root depends on
-    where the skill is installed. Counting .parent levels breaks the moment it
-    moves; looking for the marker does not.
+    Both markers (wiki/ AND .git) are required, and wiki/ must not itself be
+    a skill directory: counting .parent levels breaks the moment this script
+    is copied into a project's .agents/skills/, the marker walk does not.
     """
-    for parent in Path(__file__).resolve().parents:
-        # Both markers, not just wiki/: there is a skill directory named "wiki"
-        # under .agents/skills/, so the wiki/ marker alone resolves to the skills
-        # directory instead of the repo root.
-        if (
-            (parent / "wiki").is_dir()
-            and (parent / ".git").exists()
-            and not (parent / "wiki" / "SKILL.md").exists()
-        ):
-            return parent
+    for start in (Path.cwd().resolve(), Path(__file__).resolve()):
+        for parent in (start, *start.parents):
+            if (
+                (parent / "wiki").is_dir()
+                and (parent / ".git").exists()
+                and not (parent / "wiki" / "SKILL.md").exists()
+            ):
+                return parent
     raise SystemExit("repo root not found: no ancestor has both wiki/ and .git")
 
 
 REPO_ROOT = find_repo_root()
 BROWSER_DATA_DIR = REPO_ROOT / ".browser-session"
 RECORD_SEPARATOR = "\x1e"
+
+
+def load_env():
+    """Load only COPILOT_DEBUG from <root>/.env then <root>/.env.local.
+
+    The later file wins over the earlier one; the process environment always
+    wins over both. No other variable is parsed or copied into the process,
+    so vault credentials never reach this script through env files.
+    """
+    value = ""
+    found = False
+    for env_file in (REPO_ROOT / ".env", REPO_ROOT / ".env.local"):
+        try:
+            text = env_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            if key.strip() == "COPILOT_DEBUG":
+                value = val.strip().strip("'\"")
+                found = True
+    if found:
+        os.environ.setdefault("COPILOT_DEBUG", value)
+
+
+_BROWSER_ENV_KEYS = (
+    "PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LANGUAGE", "LC_ALL",
+    "LC_CTYPE", "TZ", "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY",
+    "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "SYSTEMROOT", "WINDIR",
+    "USERPROFILE", "LOCALAPPDATA",
+)
+
+
+def browser_environment() -> dict:
+    """Only the runtime variables Chromium needs — never ambient API keys,
+    vault credentials, model-provider variables or the debug flag."""
+    env = {}
+    for key in _BROWSER_ENV_KEYS:
+        value = os.environ.get(key)
+        if value:
+            env[key] = value
+    return env
+
+
+def ensure_private_dir(path: Path) -> Path:
+    """The persistent login profile must live in a 0700 dir inside the vault."""
+    if path.is_symlink():
+        raise SystemExit("error: browser session path is a symlink; refusing")
+    if path.exists() and not path.is_dir():
+        raise SystemExit("error: browser session path is not a directory")
+    resolved_parent = path.parent.resolve()
+    vault = REPO_ROOT.resolve()
+    if resolved_parent != vault and vault not in resolved_parent.parents:
+        raise SystemExit("error: browser session path escapes the vault")
+    if path.exists():
+        path.chmod(0o700)
+    else:
+        path.mkdir(mode=0o700)
+    if os.name != "posix":
+        raise SystemExit(
+            "error: no verifiable private-directory control on this host; "
+            "refusing to claim secrecy for the login profile")
+    mode = stat.S_IMODE(path.stat().st_mode)
+    if mode & 0o077:
+        raise SystemExit(
+            f"error: could not enforce 0700 on the browser session directory "
+            f"(mode {oct(mode)}); refusing to store login state")
+    return path
+
+
+def session_ignored_by_git() -> bool:
+    """True only when Git already ignores .browser-session/ (read-only check)."""
+    env = {
+        # Homebrew git first: /usr/bin/git is a shim that resolves through
+        # paths a restricted environment may not reach.
+        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+    }
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "check-ignore", "-q", "--",
+             ".browser-session/"],
+            capture_output=True, env=env,
+        )
+    except OSError:
+        return False
+    return proc.returncode == 0
 
 def load_project_context() -> tuple[str, str]:
     """Read project name and keywords from kb-config.yaml at the vault root.
@@ -173,18 +267,6 @@ def spinner_tick(state: list):
     log_err(f"\r{frames[state[0]]} ", end="")
 
 
-def load_env():
-    """Load .env.local if present."""
-    env_file = REPO_ROOT / ".env.local"
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" in line:
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
-
 
 def decode_jwt(token: str) -> dict:
     """Decode JWT payload without verification."""
@@ -202,26 +284,27 @@ async def extract_token_from_browser() -> dict:
     Uses .browser-session/ directory to persist cookies and localStorage across runs.
     First run requires manual login; subsequent runs reuse the session.
     """
-    from playwright.async_api import async_playwright
+    ensure_private_dir(BROWSER_DATA_DIR)
+    if not session_ignored_by_git():
+        raise SystemExit(
+            "error: .browser-session/ must be ignored by Git before storing "
+            "login state; add it to the vault's .gitignore manually")
 
-    BROWSER_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    # Add .browser-session to .gitignore if not already there
-    gitignore = REPO_ROOT / ".gitignore"
-    if gitignore.exists():
-        content = gitignore.read_text()
-        if ".browser-session" not in content:
-            gitignore.write_text(content + "\n# Playwright persistent session\n.browser-session/\n")
+    from playwright.async_api import async_playwright
 
     log_err("Launching browser (persistent session)...")
     log_err(f"  Data dir: {BROWSER_DATA_DIR}")
 
     async with async_playwright() as p:
-        # Use persistent context to keep cookies/localStorage across runs
+        # Use persistent context to keep cookies/localStorage across runs.
+        # Chromium gets an explicit, allowlisted environment: no ambient API
+        # keys, vault credentials, model-provider variables or debug flags.
         context = await p.chromium.launch_persistent_context(
             str(BROWSER_DATA_DIR),
             headless=False,
             viewport={"width": 1280, "height": 800},
             args=["--disable-blink-features=AutomationControlled"],
+            env=browser_environment(),
         )
         page = context.pages[0] if context.pages else await context.new_page()
 
@@ -311,15 +394,23 @@ async def extract_token_from_browser() -> dict:
             await context.close()
             sys.exit(1)
 
-        # Extract oid and tid from the path
+        # Extract oid and tid from the path; both must be UUIDs before they
+        # are ever interpolated into a request URL.
         path_parts = parsed.path.strip("/").split("/")
         oid_at_tid = path_parts[-1] if path_parts else ""
         oid, tid = oid_at_tid.split("@") if "@" in oid_at_tid else ("", "")
+        try:
+            uuid.UUID(oid)
+            uuid.UUID(tid)
+        except (ValueError, AttributeError):
+            log_err("ERROR: WebSocket identity is not a valid UUID pair")
+            await context.close()
+            sys.exit(1)
 
         # Check token freshness
         claims = decode_jwt(access_token)
         exp = claims.get("exp", 0)
-        now = int(__import__("time").time())
+        now = int(time.time())
         remaining = exp - now
         if remaining < 60:
             log_err(f"  WARNING: Token expires in {remaining}s — may not be valid long enough.")
@@ -457,7 +548,11 @@ async def query_copilot(prompt: str, token_data: dict) -> str:
     conversation_id = str(uuid.uuid4())
     client_corr_id = str(uuid.uuid4())
     chat_session_id = str(uuid.uuid4())
-
+    try:
+        uuid.UUID(token_data["oid"])
+        uuid.UUID(token_data["tid"])
+    except (KeyError, ValueError, TypeError):
+        raise SystemExit("error: Copilot identity is not a valid UUID pair")
     base_url = f"wss://substrate.office.com/m365Copilot/Chathub/{token_data['oid']}@{token_data['tid']}"
     params = {
         "chatsessionid": chat_session_id,
@@ -475,7 +570,9 @@ async def query_copilot(prompt: str, token_data: dict) -> str:
         "agent": "work",
         "scenario": "owahub",
     }
-    ws_url = base_url + "?" + "&".join(f"{k}={v}" for k, v in params.items())
+    # urlencode keeps tokens with &, #, +, = intact on the wire; plain
+    # concatenation would let them splice the query string.
+    ws_url = base_url + "?" + urllib.parse.urlencode(params)
 
     log_err("Connecting to Copilot WebSocket...")
 
@@ -485,40 +582,42 @@ async def query_copilot(prompt: str, token_data: dict) -> str:
     }
 
     full_text = ""
+    try:
+        async with websockets.connect(ws_url, additional_headers=headers, max_size=2**20) as ws:
+            log_err("  Connected. Handshake...")
 
-    async with websockets.connect(ws_url, additional_headers=headers, max_size=2**20) as ws:
-        log_err("  Connected. Handshake...")
+            # 1. SignalR handshake
+            await ws.send(json.dumps({"protocol": "json", "version": 1}) + RECORD_SEPARATOR)
+            response = await ws.recv()
+            if RECORD_SEPARATOR in response:
+                response = response.split(RECORD_SEPARATOR)[0]
+            try:
+                handshake = json.loads(response)
+            except json.JSONDecodeError:
+                raise RuntimeError("handshake response was not JSON") from None
+            if handshake.get("error"):
+                log_err("  Handshake rejected (protocol error)")
+                raise SystemExit(1)
 
-        # 1. SignalR handshake
-        await ws.send(json.dumps({"protocol": "json", "version": 1}) + RECORD_SEPARATOR)
-        response = await ws.recv()
-        if RECORD_SEPARATOR in response:
-            response = response.split(RECORD_SEPARATOR)[0]
-        handshake = json.loads(response)
-        if handshake.get("error"):
-            log_err(f"  Handshake error: {handshake}")
-            return ""
+            log_err("  Handshake OK. Sending query...")
 
-        log_err("  Handshake OK. Sending query...")
+            # 2. Keepalive
+            await ws.send(json.dumps({"type": 6}) + RECORD_SEPARATOR)
 
-        # 2. Keepalive
-        await ws.send(json.dumps({"type": 6}) + RECORD_SEPARATOR)
+            # 3. Chat invocation + metrics
+            chat_msg = build_chat_invocation(prompt, session_id, conversation_id, client_corr_id)
+            metrics_msg = build_metrics_frame()
+            await ws.send(chat_msg + metrics_msg)
 
-        # 3. Chat invocation + metrics
-        chat_msg = build_chat_invocation(prompt, session_id, conversation_id, client_corr_id)
-        metrics_msg = build_metrics_frame()
-        await ws.send(chat_msg + metrics_msg)
+            log_err("  Query sent. Waiting for response...")
+            spinner_state = [0]
 
-        log_err(f"  Query sent. Waiting for response...")
-        spinner_state = [0]
+            # 4. Receive streaming response
+            buffer = ""
+            last_msg_time = asyncio.get_event_loop().time()
+            DEBUG_WS = os.environ.get("COPILOT_DEBUG", "")
+            done = False
 
-        # 4. Receive streaming response
-        buffer = ""
-        last_msg_time = asyncio.get_event_loop().time()
-        DEBUG_WS = os.environ.get("COPILOT_DEBUG", "")
-        done = False
-
-        try:
             while not done:
                 try:
                     # 30s silence timeout — if no data for 30s, something is wrong
@@ -535,9 +634,9 @@ async def query_copilot(prompt: str, token_data: dict) -> str:
                         msg_type = msg.get("type")
 
                         if DEBUG_WS:
-                            target = msg.get("target", "")
-                            n_args = len(msg.get("arguments", []))
-                            log_err(f"  [debug] type={msg_type} target={target} args={n_args}")
+                            # Frame type and length only: raw frames, the
+                            # handshake and message bodies stay out of logs.
+                            log_err(f"  [debug] frame type={msg_type} len={len(frame)}")
 
                         if msg_type == 1:  # StreamItem
                             spinner_tick(spinner_state)
@@ -547,9 +646,6 @@ async def query_copilot(prompt: str, token_data: dict) -> str:
                                 messages = args[0].get("messages", [])
                                 for m in messages:
                                     content_origin = m.get("contentOrigin", "")
-
-                                    if DEBUG_WS:
-                                        log_err(f"  [debug]   origin={content_origin} text_len={len(m.get('text', ''))}")
 
                                     if content_origin == "DeepLeo":
                                         if m.get("adaptiveCards"):
@@ -566,8 +662,6 @@ async def query_copilot(prompt: str, token_data: dict) -> str:
 
                         elif msg_type == 2:  # Completion — final response
                             item = msg.get("item", {})
-                            if DEBUG_WS:
-                                log_err(f"  [debug] completion item keys={list(item.keys())}")
                             for m in item.get("messages", []):
                                 if m.get("author") == "bot":
                                     text = m.get("text", "")
@@ -580,7 +674,7 @@ async def query_copilot(prompt: str, token_data: dict) -> str:
 
                         elif msg_type == 3:  # Close invocation
                             if DEBUG_WS:
-                                log_err(f"  [debug] close invocation: {msg.get('error', 'no error')}")
+                                log_err("  [debug] close invocation received")
                             done = True
 
                         elif msg_type == 6:  # Ping
@@ -593,13 +687,20 @@ async def query_copilot(prompt: str, token_data: dict) -> str:
                     elapsed = asyncio.get_event_loop().time() - last_msg_time
                     log_err(f"\n  Timeout — no data for {elapsed:.0f}s.")
                     break
-
-        except Exception as e:
-            if "1000" not in str(e) and "OK" not in str(e):
-                log_err(f"\n  Error: {e}")
+    except asyncio.CancelledError:
+        raise
+    except SystemExit:
+        raise
+    except websockets.exceptions.ConnectionClosedOK:
+        pass  # graceful server close after a completed exchange
+    except Exception as exc:
+        # Failure class only: exception strings can carry token-bearing URLs.
+        log_err(f"Copilot connection failed ({type(exc).__name__})")
+        raise SystemExit(1) from None
 
     log_err("")  # newline after spinner
     return full_text
+
 
 
 async def main():
