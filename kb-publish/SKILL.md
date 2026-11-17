@@ -41,6 +41,29 @@ Read the summary before going further. There is no undo on a push.
 `--no-push` leaves the clone directory in place so you can diff the generated
 Gollum pages against what you expected.
 
+## OKF export (portable bundle)
+
+`export-okf.py` writes the vault as an Open Knowledge Format v0.2 bundle —
+the markdown exchange format that llmwiki, the openknowledge CLI and OKFy
+read — without changing how the vault is written. Frontmatter maps
+(`maturity` → `status`, `sources` → OKF `sources[]` entries; dates and the
+original `verification` label stay under `x-kb`), and body wikilinks become
+bundle-relative links. No `verified` event is emitted: the exporter knows
+neither who verified a page nor when, so a metadata label must not become a
+trust claim.
+
+The destination must be a NEW directory — strictly inside `.cache/` or fully
+outside the vault; existing directories, protected trees (`wiki/`, `.raw/`,
+`.git/`, the vault root) and symlinked paths are refused, never deleted or
+adopted. All pages are validated before anything is written: a page without
+`type` (OKF requires it) or an unreadable page fails the export with no
+bundle produced. Default output `.cache/okf-export/`; re-exporting needs a
+new `--out`.
+
+```bash
+python3 .agents/skills/kb-publish/scripts/export-okf.py
+```
+
 ---
 
 ## Configuration
