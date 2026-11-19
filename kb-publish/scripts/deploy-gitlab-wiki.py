@@ -122,10 +122,11 @@ HOME_FILENAME = "Home.md" if WIKI_TARGET == "github" else "home.md"
 # Directories to exclude from the wiki
 EXCLUDE_DIRS = set()
 
-# Funnel-ordered wiki sections: (dirname, display title).
-# generate_sidebar and generate_home both consume this; the sidebar's
-# skip guard tolerates dirs that do not exist yet.
-SECTION_DIRS = [
+# Preferred display titles, in funnel order. Sections that exist in the vault
+# but are absent here are appended with a title derived from the directory
+# name, so a vault with a different taxonomy is not silently dropped from the
+# sidebar and the home page.
+PREFERRED_SECTIONS = [
     ("equipo", "Team"),
     ("producto", "Product"),
     ("decisiones", "Decisions"),
@@ -136,6 +137,39 @@ SECTION_DIRS = [
     ("sources", "Sources"),
     ("meta", "Meta"),
 ]
+
+
+def _display_title(dirname: str) -> str:
+    """Readable section name from a directory name: `_templates` → `Templates`."""
+    return dirname.strip("_").replace("-", " ").replace("_", " ").title()
+
+
+def _section_dirs() -> list[tuple[str, str]]:
+    """Every content subdirectory of the wiki as (dirname, display title).
+
+    Derived from the tree rather than hardcoded: a vault whose collections are
+    named concepts/domains/comparisons/decisions/projects/questions would
+    otherwise publish only the two names that happen to match the preferred
+    list, and every other collection would be reachable from links but missing
+    from the navigation.
+    """
+    if not WIKI_DIR.is_dir():
+        return list(PREFERRED_SECTIONS)
+    present = {
+        d.name
+        for d in WIKI_DIR.iterdir()
+        if d.is_dir() and d.name not in EXCLUDE_DIRS and any(d.rglob("*.md"))
+    }
+    ordered = [(name, title) for name, title in PREFERRED_SECTIONS if name in present]
+    covered = {name for name, _ in ordered}
+    for name in sorted(present - covered):
+        ordered.append((name, _display_title(name)))
+    return ordered
+
+
+# generate_sidebar and generate_home both consume this; the sidebar's
+# skip guard tolerates dirs that do not exist yet.
+SECTION_DIRS = _section_dirs()
 
 # Pattern for wikilinks: [[target]] or [[target|display text]]
 WIKILINK_RE = re.compile(r"\[\[([^\[\]]+?)\]\]")
