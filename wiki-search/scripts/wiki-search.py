@@ -1681,6 +1681,37 @@ def cmd_graph(args):
     return 0
 
 
+def compare_runs(baseline, current):
+    """Per-query flips between two eval payloads, per mode.
+
+    A query counts as hitting when it has a first_relevant_rank. "fixed" =
+    did not hit before and hits now; "broke" = the reverse. Aggregates hide
+    exactly this, which is why the gate can refuse a mean that broke hits.
+    """
+    def hit_map(payload, mode):
+        out = {}
+        for report in payload.get("reports") or []:
+            if report.get("mode") != mode:
+                continue
+            for q in report.get("per_query") or []:
+                out[q.get("query_id")] = bool(q.get("first_relevant_rank"))
+        return out
+
+    modes = [r["mode"] for r in current.get("reports") or []]
+    by_mode = {}
+    for mode in modes:
+        before = hit_map(baseline, mode)
+        after = hit_map(current, mode)
+        shared = [qid for qid in after if qid in before]
+        by_mode[mode] = {
+            "fixed": [qid for qid in shared if after[qid] and not before[qid]],
+            "broke": [qid for qid in shared if before[qid] and not after[qid]],
+            "unchanged": sum(1 for qid in shared if after[qid] == before[qid]),
+            "missing_in_baseline": sorted(qid for qid in after if qid not in before),
+        }
+    return {"baseline_dataset": baseline.get("dataset"), "by_mode": by_mode}
+
+
 def cmd_eval(args):
     if not DB_PATH.exists():
         print(f"error: no index at {DB_PATH}; run 'build' first", file=sys.stderr)
@@ -1726,36 +1757,82 @@ def cmd_eval(args):
         "ks": args.ks,
         "reports": reports,
     }
+
+    # Flips against a previous run: a higher mean that breaks queries which
+    # used to hit is a trade-off, not a win, so report both sides per query.
+    flips = None
+    min_mrr = getattr(args, "min_mrr", None)
+    min_recall_at = getattr(args, "min_recall_at", None)
+    baseline_path = getattr(args, "baseline", None)
+    if baseline_path:
+        try:
+            baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"error: cannot read baseline {baseline_path}: {e}", file=sys.stderr)
+            return 1
+        flips = compare_runs(baseline, payload)
+        payload["flips"] = flips
+
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return 0
-
-    max_k = max(args.ks)
-    print(f"dataset {name}: {len(queries)} queries, index model {index_model}")
-    head = ["mode"] + [f"hit@{k}" for k in args.ks] + [f"recall@{max_k}", f"ndcg@{max_k}", "MRR", "p50ms"]
-    print("  ".join(f"{h:>9}" for h in head))
-    for r in reports:
-        cells = [r["mode"]] + [f"{r['hit_at_k'][k]:.3f}" for k in args.ks] + [
-            f"{r['recall_at_k'][max_k]:.3f}",
-            f"{r['ndcg_at_k'][max_k]:.3f}",
-            f"{r['mrr']:.3f}",
-            f"{r['latency_ms']['p50']:.0f}",
-        ]
-        print("  ".join(f"{c:>9}" for c in cells))
-        if r["fallback_queries"]:
-            print(f"  note: {r['fallback_queries']} {r['mode']} queries fell back to a single list")
-    for r in reports:
-        if len(r["by_category"]) > 1:
-            print(f"\n{r['mode']} by category (MRR / recall@{max_k}):")
-            for cat, c in r["by_category"].items():
-                print(f"  {cat:<24} n={c['n']:<3} {c['mrr']:.3f} / {c['recall_at_k'][max_k]:.3f}")
-    if args.per_query:
+    else:
+        print(f"dataset {name}: {len(queries)} queries, index model {index_model}")
+        max_k = max(args.ks)
+        head = ["mode"] + [f"hit@{k}" for k in args.ks] + [
+            f"recall@{max_k}", f"ndcg@{max_k}", "MRR", "p50ms"]
+        print("  ".join(f"{h:>9}" for h in head))
         for r in reports:
-            print(f"\n{r['mode']} per query (first relevant rank; '-' = not in top {max_k}):")
-            for q in r["per_query"]:
-                rank = q["first_relevant_rank"] or "-"
-                print(f"  {q['query_id']:<20} {rank!s:>3}  top: {', '.join(q['retrieved'][:3])}")
-    return 0
+            cells = [r["mode"]] + [f"{r['hit_at_k'][k]:.3f}" for k in args.ks] + [
+                f"{r['recall_at_k'][max_k]:.3f}",
+                f"{r['ndcg_at_k'][max_k]:.3f}",
+                f"{r['mrr']:.3f}",
+                f"{r['latency_ms']['p50']:.0f}",
+            ]
+            print("  ".join(f"{c:>9}" for c in cells))
+            if r["fallback_queries"]:
+                print(f"  note: {r['fallback_queries']} {r['mode']} queries fell back to a single list")
+        for r in reports:
+            if len(r["by_category"]) > 1:
+                print(f"\n{r['mode']} by category (MRR / recall@{max_k}):")
+                for cat, c in r["by_category"].items():
+                    print(f"  {cat:<24} n={c['n']:<3} {c['mrr']:.3f} / {c['recall_at_k'][max_k]:.3f}")
+        if flips is not None:
+            print(f"\nflips vs {baseline_path} (per mode):")
+            for mode, f in flips["by_mode"].items():
+                print(f"  {mode:<8} fixed {len(f['fixed']):<3} broke {len(f['broke']):<3}"
+                      f" unchanged {f['unchanged']}")
+                for qid in f["broke"][:10]:
+                    print(f"    broke: {qid}")
+        if args.per_query:
+            for r in reports:
+                print(f"\n{r['mode']} per query (first relevant rank; '-' = not in top {max_k}):")
+                for q in r["per_query"]:
+                    rank = q["first_relevant_rank"] or "-"
+                    print(f"  {q['query_id']:<20} {rank!s:>3}  top: {', '.join(q['retrieved'][:3])}")
+
+    # The gate: no floor given means measurement only (exit 0), a floor given
+    # must be able to fail. Both floors are checked against every mode so a
+    # comparison run cannot pass because one mode happened to clear it.
+    max_k = max(args.ks)
+    failures = []
+    for r in reports:
+        if min_mrr is not None and r["mrr"] < min_mrr:
+            failures.append(f"{r['mode']} MRR {r['mrr']:.4f} < --min-mrr {min_mrr}")
+        if min_recall_at is not None:
+            recall = r["recall_at_k"][max_k]
+            if recall < min_recall_at:
+                failures.append(
+                    f"{r['mode']} recall@{max_k} {recall:.4f} < --min-recall-at {min_recall_at}")
+    if flips is not None and min_mrr is not None:
+        broke = sum(len(f["broke"]) for f in flips["by_mode"].values())
+        fixed = sum(len(f["fixed"]) for f in flips["by_mode"].values())
+        if broke > fixed:
+            failures.append(
+                f"flips vs baseline: {broke} broke > {fixed} fixed"
+                " (a higher mean that breaks hits is a trade-off)")
+    for failure in failures:
+        print(f"REGRESSION: {failure}", file=sys.stderr)
+    return 1 if failures else 0
 
 
 # The view is a sibling asset, not a Python literal: 900 lines of HTML/CSS/JS
@@ -2023,6 +2100,20 @@ def parse_args(argv):
     e.add_argument("--model", default=None, help="embedding model override (default: index model)")
     e.add_argument("--json", action="store_true", help="JSON report incl. per-query results")
     e.add_argument("--per-query", action="store_true", help="also list per-query first relevant rank")
+    e.add_argument(
+        "--min-mrr", type=float, default=None, metavar="FLOAT",
+        help="exit 1 when any evaluated mode's MRR is below this floor"
+             " (no default: a gate has to be asked for)",
+    )
+    e.add_argument(
+        "--min-recall-at", type=float, default=None, metavar="FLOAT",
+        help="exit 1 when any mode's recall@max(k) falls below this floor",
+    )
+    e.add_argument(
+        "--baseline", default=None, metavar="JSON",
+        help="compare with a previous --json run and report per-query"
+             " fixed/broke flips (a higher mean that breaks hits is a trade-off)",
+    )
 
     args = p.parse_args(argv)
     if args.cmd == "query":

@@ -43,6 +43,8 @@ it accepts 2/10 unsupported claims, one at 0.912 against a 0.90 threshold.
 
 **Measured limit (clef-flash:9b, 23 labelled cases, 2026-10-19):** the `grounded` axis does **not** reliably separate a supporting quote from an adjacent-but-wrong one. Unsupported quotes scored 0.47–0.93; supported ones 0.59–0.96. At 0.90 the false-positive rate is 10% but only 60% of real claims pass. Do not treat `accept` as proof the quote supports the claim; read the probability and the source. Re-run `calibration.py` after any model or prompt change and compare the overlap, not just the aggregate.
 
+**Read the interval, not just the floor (2026-11-24 audit).** The floors (`FPR<=0.20`, `recall>=0.90`) are checked against **10 negatives and 3 secrets**, so one lost secret moves recall by 33 points. `calibration.py` now prints a 95% Wilson interval per gated axis and warns when an axis has fewer than 10 items: at n=3 a perfect `recall=1.0` spans `[0.44, 1.0]`, which is wider than the margin it is supposed to protect. Treat a floor flagged as too narrow as an **interval report**, not a pass/fail — and grow the set instead of widening the floor.
+
 ## Workflow
 
 1. Extract atomic claims, each with a verbatim supporting quote. Event claims may use `skip_grounded` plus `source`.

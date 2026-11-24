@@ -190,6 +190,68 @@ class RoutingActionTest(unittest.TestCase):
         self.assertEqual(self.route(probs), "human_review")
 
 
+class CalibrationIntervalTest(unittest.TestCase):
+    """A floor on 3 items is a coin toss; the interval must say so.
+
+    2026-11-24 audit: the sensitive axis has 3 cases, so one flip moves recall
+    by 33 points against a 0.90 floor. Reporting the Wilson interval turns an
+    invisible coin toss into a visible width.
+    """
+
+    @staticmethod
+    def intervals():
+        import importlib.util
+        from pathlib import Path as _Path
+        script = _Path(__file__).resolve().parent.parent / "scripts" / "calibration.py"
+        src = script.read_text(encoding="utf-8")
+        start = src.index("def wilson_interval")
+        end = src.index("def check_floors")
+        ns = {}
+        exec(compile(src[start:end], "calibration-fns", "exec"), ns)
+        return ns["axis_intervals"], ns["wilson_interval"]
+
+    def metrics(self, tp_secret=3, secrets=3, fp_grounded=2, negatives=10):
+        return {
+            "grounded": {"tp": negatives - fp_grounded, "tn": negatives - fp_grounded,
+                         "fp": fp_grounded, "fn": 0,
+                         "precision": 0.8, "recall": 1.0,
+                         "false_positive_rate": fp_grounded / negatives},
+            "sensitive": {"tp": tp_secret, "tn": 10, "fp": 0, "fn": secrets - tp_secret,
+                          "precision": 1.0, "recall": tp_secret / secrets},
+        }
+
+    def test_three_item_axis_is_flagged_too_narrow(self):
+        axis_intervals, _ = self.intervals()
+        out = axis_intervals(self.metrics())
+        self.assertIn("sensitive_recall", out["too_narrow"])
+        self.assertNotIn("grounded_false_positive_rate", out["too_narrow"])
+
+    def test_perfect_recall_on_three_items_has_a_wide_interval(self):
+        axis_intervals, _ = self.intervals()
+        info = axis_intervals(self.metrics())["sensitive_recall"]
+        self.assertEqual(info["n"], 3)
+        low, high = info["interval"]
+        self.assertLess(low, 0.6, "3/3 must not look like a tight 1.0")
+        self.assertGreater(high - low, 0.4)
+
+    def test_losing_one_secret_widens_below_the_floor(self):
+        axis_intervals, _ = self.intervals()
+        info = axis_intervals(self.metrics(tp_secret=2))["sensitive_recall"]
+        self.assertAlmostEqual(2 / 3, 0.667, places=3)
+        self.assertLess(info["interval"][0], 0.5)
+
+    def test_thirty_items_make_the_floor_measurable(self):
+        axis_intervals, _ = self.intervals()
+        out = axis_intervals(self.metrics(tp_secret=30, secrets=30))
+        self.assertEqual(out["too_narrow"], [])
+        low, _high = out["sensitive_recall"]["interval"]
+        self.assertGreater(low, 0.85, "30/30 should have a tight lower bound")
+
+    def test_empty_axis_returns_no_interval(self):
+        _, wilson = self.intervals()
+        self.assertIsNone(wilson(0, 0))
+
+
 class CalibrationSetTest(unittest.TestCase):
     def test_set_is_balanced_and_labelled(self):
         rows = json.loads(

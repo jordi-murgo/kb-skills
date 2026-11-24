@@ -86,6 +86,46 @@ def score(results, labels):
     }
 
 
+def wilson_interval(successes, total, z=1.96):
+    """Wilson score interval for a proportion — stdlib only, no scipy.
+
+    Why this exists: the sensitive axis has 3 items, so one flip moves recall
+    by 33 points and the floor is a coin toss dressed as a gate. Reporting the
+    interval alongside the point estimate makes the width visible; a floor is
+    only a gate when the axis has enough items to be narrower than the margin
+    it is supposed to protect.
+    """
+    if total <= 0:
+        return None
+    p = successes / total
+    denom = 1 + z * z / total
+    centre = (p + z * z / (2 * total)) / denom
+    half = z * ((p * (1 - p) / total + z * z / (4 * total * total)) ** 0.5) / denom
+    return [round(max(0.0, centre - half), 3), round(min(1.0, centre + half), 3)]
+
+
+def axis_intervals(metrics):
+    """95% intervals for the two gated axes, plus a too-narrow warning."""
+    out = {}
+    g = metrics["grounded"]
+    neg = g["fp"] + g["tn"]
+    out["grounded_false_positive_rate"] = {
+        "n": neg,
+        "interval": wilson_interval(g["fp"], neg),
+    }
+    s = metrics["sensitive"]
+    pos = s["tp"] + s["fn"]
+    out["sensitive_recall"] = {
+        "n": pos,
+        "interval": wilson_interval(s["tp"], pos),
+    }
+    # Rule from the 2026-11-24 audit: a floor needs >=10 items on its axis;
+    # below that the interval is wider than the margin it gates on.
+    out["too_narrow"] = [k for k, v in out.items()
+                         if isinstance(v, dict) and v["n"] < 10]
+    return out
+
+
 def check_floors(metrics):
     failures = []
     fpr = metrics["grounded"]["false_positive_rate"]
@@ -168,6 +208,7 @@ def main(argv=None):
 
     metrics = score(results, labels)
     failures = check_floors(metrics)
+    intervals = axis_intervals(metrics)
     payload = {
         "model": args.model,
         "endpoint": args.endpoint,
@@ -176,6 +217,7 @@ def main(argv=None):
         "cases": len(results),
         "metrics": metrics,
         "floors": FLOORS,
+        "intervals": intervals,
         "failures": failures,
     }
     if args.json:
@@ -191,6 +233,15 @@ def main(argv=None):
             f"sensitive  precision={s['precision']} recall={s['recall']}  "
             f"(tp={s['tp']} tn={s['tn']} fp={s['fp']} fn={s['fn']})"
         )
+        for axis, info in (("grounded FPR", intervals["grounded_false_positive_rate"]),
+                           ("sensitive recall", intervals["sensitive_recall"])):
+            if info["interval"]:
+                print(f"  95% CI {axis}: {info['interval']} on n={info['n']}")
+        if intervals["too_narrow"]:
+            print("\nWARNING: floor measured on fewer than 10 items on "
+                  + ", ".join(intervals["too_narrow"])
+                  + " — the interval is wider than the margin it gates on."
+                  " Grow the set before treating this as pass/fail.")
         if failures:
             print("\nFAILED FLOORS:")
             for failure in failures:

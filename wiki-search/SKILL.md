@@ -17,11 +17,18 @@ python3 .agents/skills/wiki-search/scripts/wiki-search.py query "QUESTION TERMS"
 python3 .agents/skills/wiki-search/scripts/wiki-search.py query "QUESTION TERMS" --scope recent --top 8
 python3 .agents/skills/wiki-search/scripts/wiki-search.py build
 python3 .agents/skills/wiki-search/scripts/wiki-search.py eval evals/wiki-search.json --mode bm25 --mode vector --mode hybrid
+python3 .agents/skills/wiki-search/scripts/wiki-search.py eval evals/wiki-search.json --baseline /tmp/before.json --min-mrr 0.75
 python3 .agents/skills/wiki-search/scripts/wiki-search.py graph [PAGE]
 python3 .agents/skills/wiki-search/scripts/wiki-search.py graph --html
 ```
 
 `query TEXT` ranks candidates; it does not synthesize. `--scope canonical` is backward-compatible indexed search, `recent` searches `.cache/knowledge-flow/observations.jsonl` immediately, and `all` returns two separate result blocks. Recent hits are provisional and never silently fused with canonical rankings. Quick/standard/deep are answer depths, not CLI switches.
+
+`eval` measures by default; it only gates when asked. `--min-mrr FLOAT` and
+`--min-recall-at FLOAT` exit 1 below the floor (checked against every evaluated
+mode), and `--baseline FILE` diffs a previous `--json` run per query, printing
+`fixed/broke/unchanged` and failing when `broke > fixed` — a higher mean that
+breaks queries which used to hit is a trade-off, not a win.
 
 Read [Index commands and configuration](references/index.md) before using the engine.
 
