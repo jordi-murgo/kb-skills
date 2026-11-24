@@ -1,10 +1,135 @@
 # kb-skills
 
-Upstream source of truth for the knowledge-base skills used by project vaults.
+Reusable agent skills for building project knowledge bases from sources, code,
+research and day-to-day work. Instead of keeping everything in chat or blindly
+adding documents to a vector index, each project gets a readable wiki with
+source citations, searchable recent observations, explicit decisions about what
+becomes durable knowledge, and checks that can fail.
 
-Projects consume these by copying them into `.agents/skills/`. Those copies are
-forks: edit them freely for project needs, but changes that should benefit every
-project belong **here**, then get propagated back out.
+This repository is the upstream source of truth. Projects copy selected skills
+into `.agents/skills/`; project-specific adaptations live in those copies, while
+improvements useful to every project belong here. Start with
+[`kb-setup`](kb-setup/SKILL.md) and the complete skill/configuration reference
+in [`kb-config.example.yaml`](kb-config.example.yaml).
+
+## Why these skills work together
+
+```mermaid
+flowchart TD
+    A["Sources and research"] --> B[".raw/ · cited source evidence"]
+    B --> C[".cache/ · provisional observations"]
+    C --> D["Compare with existing knowledge; vet claims"]
+    D --> E{"Consolidation decision"}
+    E -->|"Merge, update or promote"| F["wiki/ · canonical knowledge"]
+    E -->|"Recent-only or unresolved dispute"| G["Keep provisional; label uncertainty"]
+    E -->|"Reject or no-op"| H["No canonical change"]
+    C --> I["Search recent observations"]
+    F --> J["Search canonical pages"]
+    G --> I
+    I --> K["Answer with scope and citations"]
+    J --> K
+    F --> L["Lint, review and publish"]
+```
+
+- **Evidence before synthesis.** Source files, hashes, exact quotes and line
+  citations let a reader inspect why a page says something. A newly fetched
+  item need not create a new wiki page; corroboration can add evidence to an
+  existing one, and duplicates can leave canonical pages unchanged.
+- **Freshness without false authority.** Recent observations are available
+  before consolidation, but searches label them separately from canonical
+  pages. Git-based checks flag claims that may be stale; contradictory claims
+  remain visible until their dates, scope and evidence are reconciled.
+- **Retrieval with limits.** `wiki-search` combines lexical and embedding
+  retrieval with an explicit recent scope, reads underlying evidence for
+  answers, and abstains from totals when a source table is incomplete.
+  `code-search` uses a separate index and model configuration for source code.
+- **Task-specific models, not one model for everything.** Configured embedding
+  models retrieve wiki pages and source code; a separate decision model scores
+  claims for routing. Each can use a self-hosted or remote endpoint. The model
+  proposes candidates or scores—not evidence, approval or a final verdict.
+- **Controls that expose failure.** Ingestion routes unsupported or sensitive
+  claims away from promotion; lifecycle and lint checks report missing evidence
+  and broken structure. Research briefs, document conversion and publication
+  have explicit review or dry-run steps. Agents still have to inspect evidence:
+  a model verdict, passing test or scanner score is not a security certificate.
+- **Portable across projects.** Each skill owns its scripts and references.
+  Project paths, watched repositories and model endpoints come from vault
+  configuration; indexes and ledgers stay under disposable `.cache/`. The
+  vault remains Markdown and Git, not a separate knowledge service.
+
+**Practical advantage:** a team can ask what it knows *now*, trace the answer
+to sources, see unresolved gaps, and carry the same procedures into another
+project. The value is the chain of evidence, decisions and maintenance—not a
+claim that more pages or a higher model score automatically mean better answers.
+
+## Choose a skill
+
+The groups below cover all 24 root skills. Pick the job you need; the linked
+`SKILL.md` is the detailed contract, including commands, prerequisites and
+limits. For the full configurable inventory, see
+[`kb-config.example.yaml`](kb-config.example.yaml).
+
+### Set up and acquire evidence
+
+| Skill | What it does | When to use it / boundary |
+|---|---|---|
+| [`kb-setup`](kb-setup/SKILL.md) | Installs the vault skill layout, config and gates. | Bootstrap or repair a project KB; it wires state-maintenance instructions, not project goals. |
+| [`wiki`](wiki/SKILL.md) | Defines the canonical wiki structure, navigation and hot/project-state views. | Scaffold or maintain the vault; sourced claims still pass through ingestion. |
+| [`kb-jira-sync`](kb-jira-sync/SKILL.md) | Fetches Jira issues into `.raw/jira/` for a separate wiki reconciliation. | Refresh ticket evidence; the import does not silently rewrite issue pages. |
+| [`kb-m365-fetch`](kb-m365-fetch/SKILL.md) | Fetches corporate mail, Teams and optional SharePoint material with Graph. | Capture corporate context; label the Copilot fallback as a model summary, not verbatim Graph data. |
+| [`kb-gmail-fetch`](kb-gmail-fetch/SKILL.md) | Fetches selected personal Gmail messages with bounded search. | Supplement, never replace, corporate mail; a distinct OAuth identity and source. |
+| [`doc-pipeline`](doc-pipeline/SKILL.md) | Converts Office/PDF/HTML sources to reviewed, ingest-ready Markdown. | Convert first, annotate fidelity concerns and obtain approval; it does not ingest wiki pages. |
+| [`ego-browser-research`](ego-browser-research/SKILL.md) | Captures rendered or session-bound web evidence with Ego Browser. | Use when static fetch is insufficient; authentication stays with the user. |
+
+### Turn observations into knowledge
+
+| Skill | What it does | When to use it / boundary |
+|---|---|---|
+| [`wiki-ingest`](wiki-ingest/SKILL.md) | Records cited atomic observations, compares them with existing knowledge and routes candidates. | Ingest a file, URL, image or batch; zero new pages is a valid result. |
+| [`wiki-vetting`](wiki-vetting/SKILL.md) | Scores groundedness, durability, duplication and sensitivity; audits page lifecycle. | Triage a claim for review or routing; scores do not replace reading its quote and source. |
+| [`wiki-consolidate`](wiki-consolidate/SKILL.md) | Merges evidence, updates owners, holds disputes or promotes candidates. | Review provisional knowledge; append decisions and change canonical pages only when justified. |
+| [`wiki-markdown`](wiki-markdown/SKILL.md) | Defines wiki frontmatter, links, embeds and page syntax. | Write pages consistently; not a source-checking tool. |
+| [`wiki-prose`](wiki-prose/SKILL.md) | Tightens English, Spanish and Catalan wiki writing with detect-only checks. | Remove unclear or agent-sounding prose while preserving claims and citations. |
+| [`save`](save/SKILL.md) | Files a durable conversation insight or note. | Save something worth keeping; source ingestion belongs to `wiki-ingest`. |
+
+### Find, maintain and share knowledge
+
+| Skill | What it does | When to use it / boundary |
+|---|---|---|
+| [`wiki-search`](wiki-search/SKILL.md) | Retrieves canonical pages and separately labelled recent observations; supports citation-backed answers and a retrieval eval. | Ask the KB a question; incomplete evidence means a qualified answer or abstention, not a guessed total. |
+| [`code-search`](code-search/SKILL.md) | Indexes configured source trees for lexical/vector implementation search. | Find code paths and line ranges; not a call graph or a substitute for LSP. |
+| [`wiki-lint`](wiki-lint/SKILL.md) | Runs deterministic checks for broken links, citations, frontmatter and other vault defects. | Health-check before sharing; a failed/missing check must not pass silently. |
+| [`wiki-sync`](wiki-sync/SKILL.md) | Reports pages that cite files changed in the *current* repo after the page date. | Check local file-linked claims after commits; review the diff before editing. |
+| [`wiki-git-ingest`](wiki-git-ingest/SKILL.md) | Scans watched *upstream* repositories for new release/change claims. | Refresh dependency knowledge; vet interesting changes before canonical filing. |
+| [`wiki-fold`](wiki-fold/SKILL.md) | Rolls older log entries into linked, extractive summaries. | Compress history without inventing facts; dry-run is the default. |
+| [`wiki-issues`](wiki-issues/SKILL.md) | Maintains a prioritized open-issues stack with checked IDs and format. | File a handoff or work the top issue; not a substitute for lint. |
+| [`kb-publish`](kb-publish/SKILL.md) | Generates and pushes GitHub/GitLab Wiki pages; also exports a new-directory-only OKF bundle. | Lint and dry-run first, inspect, then explicitly authorize publication. |
+
+### Research and decide what to reuse
+
+| Skill | What it does | When to use it / boundary |
+|---|---|---|
+| [`research-brief`](research-brief/SKILL.md) | Constructs or audits a research brief with falsification questions and stopping conditions. | Set the question and evidence bar before a queued research run. |
+| [`autoresearch`](autoresearch/SKILL.md) | Runs an iterative source-backed research loop into provisional observations and synthesis. | Investigate a topic; queue mode needs project-local helpers and human framing/approval. |
+| [`vampirize`](vampirize/SKILL.md) | Tests an external idea/repo for project fit, evidence and reuse rights. | Decide adopt, integrate, reimplement or reject; no code copying without a passing rights gate. |
+
+## One end-to-end path
+
+1. Configure a vault with `kb-setup` and [`kb-config.example.yaml`](kb-config.example.yaml).
+2. Fetch project sources (`kb-jira-sync`, `kb-m365-fetch` or `kb-gmail-fetch`),
+   or convert a document with `doc-pipeline`. Preserve its source in `.raw/`.
+3. Run `wiki-ingest`: hash the source, record line-cited observations, compare
+   both recent and canonical results, and vet claims with `wiki-vetting`.
+4. Review the candidate queue with `wiki-consolidate`. Merge into an existing
+   page, hold a dispute or promote durable new knowledge; update navigation
+   only when canonical content changes.
+5. Ask with `wiki-search` (or use `code-search` for implementations). Run
+   `wiki-lint` and the relevant freshness check; publish via `kb-publish` only
+   after a dry-run and approval.
+
+The source, provisional ledger, canonical wiki and derived index have different
+roles. Keeping them separate is what lets a reader distinguish *what a source
+said*, *what is being considered* and *what the project currently supports*.
 
 ## Layout
 
@@ -37,7 +162,7 @@ kb-skills/
 │   └── scripts/
 ├── save/  doc-pipeline/  autoresearch/  research-brief/
 ├── kb-setup/                ← wire a project's KB plumbing
-├── kb-publish/              ← publish the vault to a GitLab Wiki
+├── kb-publish/              ← publish to GitHub/GitLab Wiki or export OKF
 │   └── scripts/
 ├── kb-jira-sync/            ← refresh raw Jira data
 │   └── scripts/
@@ -149,6 +274,27 @@ self-documented there, including which skill consumes it. Copy it to
 | `tags` | `wiki-lint` — allowed tag vocabulary + aliases (opt-in) |
 | `layout` | `wiki-lint` — type↔folder mapping for misplaced pages (opt-in) |
 
+### Model placement and trust
+
+The model-dependent steps are deliberately narrow: `wiki-search` and
+`code-search` turn text into embeddings for semantic retrieval, while
+`wiki-vetting` asks a decision model about claim support, durability,
+duplication and sensitivity. Wiki and code retrieval can use different models
+and endpoints (`wiki_search` / `code_search`); vetting uses `decisions`. These
+can point to a self-hosted service on another machine or to a configured remote
+provider. The example configuration defaults to a local Ollama URL, but the
+models do not have to run on the agent's machine.
+
+Only the configured endpoint receives text submitted to that step: source
+fragments for embeddings and claim/quote pairs for vetting. Choose that
+endpoint according to the data's sensitivity; keep hosted credentials in the
+environment, not `kb-config.yaml`. There is no automatic switch to a public
+provider if an endpoint fails. Lexical retrieval and the static lifecycle/lint
+checks have no model requirement. A decision score is a routing signal:
+calibrate the chosen model on labelled cases and review the source before
+promoting a claim. See [`wiki-vetting`](wiki-vetting/SKILL.md) and the
+[`wiki-search` index reference](wiki-search/references/index.md).
+
 Credentials never live in this file. Jira reads `ATLASSIAN_EMAIL` and
 `ATLASSIAN_API_KEY` from the environment, `.env`, or `.env.local`. The historical
 misspelling `ATLASIAN_*` (one `S`) is still accepted with a warning, so existing
@@ -203,20 +349,6 @@ sentinel is the one exception, so every clone gets the same policy:
 ```
 
 See `kb-setup/SKILL.md` for the creation and verification commands.
-
-## Research and reuse
-
-Use the skill that matches the evidence and decision needed:
-
-| Need | Skill | Boundary |
-|---|---|---|
-| Search configured source trees by text or embedding similarity | `code-search` | `doctor` before build/query; code lives in `.cache/code-search/` |
-| Capture rendered public pages or research a logged-in browser session | `ego-browser-research` | Ego Browser only; explicit user handoff for authentication |
-| Decide whether an external repository, post, article or product is reusable | `vampirize` | Independent source, project-fit and rights analyses; no upstream code in reports |
-
-`vampirize` may recommend a clean-room algorithm reimplementation. It does not
-permit copying code, tests, identifiers, prose or assets without a passing
-licence gate and the required notices.
 
 ## Two traps worth knowing
 
