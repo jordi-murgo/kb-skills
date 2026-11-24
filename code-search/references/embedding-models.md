@@ -105,15 +105,24 @@ against hybrid 0.497 at 1:1.
    without collapsing them to pages — always dedupe by path before scoring.
 3. **Compare arms paired per query**, never only as aggregates: mean delta plus
    a sign test. Most queries are ties, and an aggregate hides that.
-4. **Freeze the gold set while you sweep.** `code-search.py` has no `eval`
-   subcommand: the gold set (`tests/gold-code.json`) is scored by whatever script
-   the experiment writes, which means that script decides the result. Keep the
-   scoring code out of the change under test, and re-run it against the unmodified
-   tree first. If the baseline moved and you did not move it, something else did.
+4. **Freeze the gold set while you sweep.** Since 2026-11-24 `code-search.py`
+   has its own `eval` subcommand, so the scorer is frozen and no longer "whatever
+   script the experiment writes":
 
-   (By contrast `wiki-search.py eval` computes the metrics itself, so there the
-   metric functions — `retrieval_metrics`, `dedupe_pages`, the aggregation — are
-   the frozen thing. See `wiki-search/references/ranking-changes.md` § 2b.)
+   ```bash
+   python3 code-search/scripts/code-search.py eval tests/gold-code.json --json > /tmp/before.json
+   python3 code-search/scripts/code-search.py eval tests/gold-code.json \
+       --baseline /tmp/before.json --min-mrr 0.45
+   ```
+
+   `--min-mrr` / `--min-recall-at` have no defaults and exit 1 below the floor;
+   `--baseline` reports per-query `fixed/broke` and fails when `broke > fixed`.
+   Re-run it against the unmodified tree first: if the baseline moved and you did
+   not move it, something else did.
+
+   (Same contract as `wiki-search.py eval`, where the metric functions —
+   `retrieval_metrics`, `dedupe_pages`, the aggregation — are the frozen thing.
+   See `wiki-search/references/ranking-changes.md` § 2b.)
 5. **Validate the chosen value with split-half.** Pick the weight on half the
    queries, measure it on the other half. 8:1 picked on half A scored 0.900 on
    half B.

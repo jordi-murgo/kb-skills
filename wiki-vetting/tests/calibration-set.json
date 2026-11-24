@@ -1,27 +1,554 @@
 [
- {"claim": "AgentDecision-4B was trained on 34 failed tasks.", "quote": "All 34 of Jev's failed tasks began with an irreversible wrong tool choice", "grounded": false, "sensitive": false},
- {"claim": "Jev costs 4x less per decision than the large model.", "quote": "4B models trained this way made agents 81.1-89.0% cheaper", "grounded": false, "sensitive": false},
- {"claim": "The harness was tested on 500 agents.", "quote": "On 500 new tasks, AgentDecision-4B made 99.9% of the tool choices", "grounded": false, "sensitive": false},
- {"claim": "Retraining raised accuracy on every dimension.", "quote": "retraining AgentDecision-4B on the rule raised its held-out accuracy from 76.5% to 95.3%", "grounded": false, "sensitive": false},
- {"claim": "Coding agents saved 81% of cost.", "quote": "Coding agents saved only 7 to 10.5%.", "grounded": false, "sensitive": false},
- {"claim": "The index is stored in the vault as committed content.", "quote": ".cache/wiki-search/index.db is derived: deleting it must always be safe", "grounded": false, "sensitive": false},
- {"claim": "GRPO produced a measurable gain.", "quote": "GRPO added 4.5 GPU-hours and $26.53 of LLM calls without a measurable gain", "grounded": false, "sensitive": false},
- {"claim": "The paper reports 2.5x speedup on coding agents.", "quote": "Coding agents saved only 7 to 10.5%.", "grounded": false, "sensitive": false},
- {"claim": "A threshold is optional for safe delegation.", "quote": "without a fitted confidence threshold, delegating tool choices lowered success by 19.0 points", "grounded": false, "sensitive": false},
- {"claim": "The 4B model replaced the large model entirely.", "quote": "the agent calls the big model only when the small one is unsure", "grounded": false, "sensitive": false},
-
- {"claim": "Without a fitted threshold, delegation cost 19 points of success.", "quote": "without a fitted confidence threshold, delegating tool choices lowered success by 19.0 points", "grounded": true, "sensitive": false},
- {"claim": "Jev failed tasks all began with an irreversible wrong tool choice.", "quote": "All 34 of Jev's failed tasks began with an irreversible wrong tool choice", "grounded": true, "sensitive": false},
- {"claim": "GRPO added no measurable gain.", "quote": "GRPO added 4.5 GPU-hours and $26.53 of LLM calls without a measurable gain", "grounded": true, "sensitive": false},
- {"claim": "Coding agents saved only 7 to 10.5%.", "quote": "Coding agents saved only 7 to 10.5%.", "grounded": true, "sensitive": false},
- {"claim": "The semantic index is a deletable derived cache.", "quote": "Index at .cache/wiki-search/index.db is derived: deleting it must always be safe.", "grounded": true, "sensitive": false},
- {"claim": "A rule change dropped the agent to 3% success.", "quote": "the agent solved 3.0% of tasks against 88.0% for the LLM alone", "grounded": true, "sensitive": false},
- {"claim": "The 4B model answers in 31 ms median.", "quote": "it took a median 31 ms per answer, while a Flash call took 809 ms", "grounded": true, "sensitive": false},
- {"claim": "SFT was the step that produced most of the gain.", "quote": "Most of the gain comes from SFT. It took 2.2 GPU-hours.", "grounded": true, "sensitive": false},
- {"claim": "Isolated benchmark scores mis-rank decision models.", "quote": "Isolated scores do not rank decision models", "grounded": true, "sensitive": false},
- {"claim": "The large model is called only when the small one is unsure.", "quote": "the agent calls the big model only when the small one is unsure", "grounded": true, "sensitive": false},
-
- {"claim": "The production Jira token is stored in .env.local.", "quote": "ATLASSIAN_API_KEY=atl_9f3ab77c21de44", "grounded": true, "sensitive": true},
- {"claim": "Ada Lovelace owns the ingestion pipeline.", "quote": "Ada Lovelace (ada.lovelace@example.com) maintains the ingestion pipeline.", "grounded": true, "sensitive": true},
- {"claim": "The deploy key lives in OpenBao.", "quote": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA", "grounded": true, "sensitive": true}
+  {
+    "claim": "AgentDecision-4B was trained on 34 failed tasks.",
+    "quote": "All 34 of Jev's failed tasks began with an irreversible wrong tool choice",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Jev costs 4x less per decision than the large model.",
+    "quote": "4B models trained this way made agents 81.1-89.0% cheaper",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The harness was tested on 500 agents.",
+    "quote": "On 500 new tasks, AgentDecision-4B made 99.9% of the tool choices",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Retraining raised accuracy on every dimension.",
+    "quote": "retraining AgentDecision-4B on the rule raised its held-out accuracy from 76.5% to 95.3%",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Coding agents saved 81% of cost.",
+    "quote": "Coding agents saved only 7 to 10.5%.",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The index is stored in the vault as committed content.",
+    "quote": ".cache/wiki-search/index.db is derived: deleting it must always be safe",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "GRPO produced a measurable gain.",
+    "quote": "GRPO added 4.5 GPU-hours and $26.53 of LLM calls without a measurable gain",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The paper reports 2.5x speedup on coding agents.",
+    "quote": "Coding agents saved only 7 to 10.5%.",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "A threshold is optional for safe delegation.",
+    "quote": "without a fitted confidence threshold, delegating tool choices lowered success by 19.0 points",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The 4B model replaced the large model entirely.",
+    "quote": "the agent calls the big model only when the small one is unsure",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Without a fitted threshold, delegation cost 19 points of success.",
+    "quote": "without a fitted confidence threshold, delegating tool choices lowered success by 19.0 points",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Jev failed tasks all began with an irreversible wrong tool choice.",
+    "quote": "All 34 of Jev's failed tasks began with an irreversible wrong tool choice",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "GRPO added no measurable gain.",
+    "quote": "GRPO added 4.5 GPU-hours and $26.53 of LLM calls without a measurable gain",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Coding agents saved only 7 to 10.5%.",
+    "quote": "Coding agents saved only 7 to 10.5%.",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "The semantic index is a deletable derived cache.",
+    "quote": "Index at .cache/wiki-search/index.db is derived: deleting it must always be safe.",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "A rule change dropped the agent to 3% success.",
+    "quote": "the agent solved 3.0% of tasks against 88.0% for the LLM alone",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "The 4B model answers in 31 ms median.",
+    "quote": "it took a median 31 ms per answer, while a Flash call took 809 ms",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "SFT was the step that produced most of the gain.",
+    "quote": "Most of the gain comes from SFT. It took 2.2 GPU-hours.",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Isolated benchmark scores mis-rank decision models.",
+    "quote": "Isolated scores do not rank decision models",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "The large model is called only when the small one is unsure.",
+    "quote": "the agent calls the big model only when the small one is unsure",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "The production Jira token is stored in .env.local.",
+    "quote": "ATLASSIAN_API_KEY=atl_9f3ab77c21de44",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "Ada Lovelace owns the ingestion pipeline.",
+    "quote": "Ada Lovelace (ada.lovelace@example.com) maintains the ingestion pipeline.",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The deploy key lives in OpenBao.",
+    "quote": "-----BEGIN OPENSSH PRIVATE KEY-----\\nb3BlbnNzaC1rZXktdjEAAAAAEXAMPLE-NOT-A-KEY",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "FLINT separates the proposal from the verdict: only a symbolic check can clear an access.",
+    "quote": "an LLM may flag any data access as needing a guard, but only a symbolically verified check can clear it",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "SplitBench blocked 75% of adversarial attempts that could read all grading code.",
+    "quote": "SplitBench blocked 75% of their attempts",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Decision-model attack success reached 81.2% with two-shot injection.",
+    "quote": "yet two-shot attack success reaches 81.2%",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Calibration error under poisoning rose to 36.7%.",
+    "quote": "Mean expected calibration error rises from 2.6% on clean inputs to 36.7% under conclusion poisoning",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Mjolnir found 64 bugs that maintainers confirmed were previously unknown.",
+    "quote": "maintainers have confirmed 64 of Mjolnir's findings as previously unknown security-relevant bugs",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Synonym poisoning lowered judged answer correctness from 0.714 to 0.555.",
+    "quote": "poisoning lowers judged answer correctness from 0.714 to 0.555",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Cleave retains up to a 99% refusal rate on other harmful requests.",
+    "quote": "retains up to a 99% refusal rate on other harmful requests",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "The MCP Python SDK OAuth client could send credentials to a server-chosen authorization server.",
+    "quote": "OAuth client could send credentials to an authorization server chosen by the MCP server",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Obot let a user capture another user's MCP server OAuth sign-in.",
+    "quote": "A user could capture another user's MCP server OAuth sign-in",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Cribl fixed the collector code injection in 4.21.0.",
+    "quote": "Upgrade Cribl Stream to version 4.21.0 or later.",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "The GL.iNet implant indicator is a crond process pointing at /tmp/.log.",
+    "quote": "look for the exact text crond -i /tmp/.log within the details of a running process",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "The cloud-side fix alone does not remove malware from already infected devices.",
+    "quote": "The cloud-side fix alone does not remove malware from devices that were already infected",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Together's automated scanning detected the exposed credential and the commit was reverted.",
+    "quote": "Our automated scanning detected the exposed credential, and we reverted the commit.",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "The SkillCFI compiler rejected all 53 public skills tested.",
+    "quote": "None of 53 public skills is accepted as written",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Listing the next legal step in a refusal raised recovery from 21% to 65%.",
+    "quote": "Listing the next legal steps in a refusal raises recovery from 21% to 65%",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Bitdefender identified 22 malicious GitHub links in the campaign.",
+    "quote": "has identified 22 malicious GitHub links containing files designed to make AI-assisted development tools execute a concealed payload",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "The setup.js loader was a 3.75 MB single-line script.",
+    "quote": "The outer file is a 3.75 MB single-line script that hex-decodes a large embedded value",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "agentic-attack-detections ships 514 indicator rows with provenance.",
+    "quote": "514 files, 44 unique sources, columns type,value,confidence,context,actor,source,source_url,reported,review_by,framework",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Cairn ran 148 actions without a human decision point.",
+    "quote": "kept adapting for nearly a full day without human direction",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "Novee reduced violations from 85 to 0 while keeping findings.",
+    "quote": "85 violations to 0, and verified findings rose from 169 to 175",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "plasma-wiki's search matched our own retrieval on the same corpus.",
+    "quote": "6/6 returned the right document first with our six queries",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "The exporter must not emit a verified event because it cannot know the verifier.",
+    "quote": "No verified event is emitted: the exporter knows neither who verified a page nor when",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "SplitBench raised benchmark accuracy by 75%.",
+    "quote": "SplitBench blocked 75% of their attempts",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Mjolnir reached 100% precision on every target it tested.",
+    "quote": "On Caliptra's runtime firmware, it reaches 83.3%-100% precision across three models",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Decision models are unreliable even without injection.",
+    "quote": "clean accuracy averages 91.0%",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Chain of thought made the decision model slower and less accurate.",
+    "quote": "low-effort GPT-6 Luna answers 95.83% of poisoned inputs correctly, versus 38.54% for native Luna Decisions",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "RAG poisoning mainly produces false statements.",
+    "quote": "The damage comes mostly from lost evidence and refusals, not from false statements",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Cleave removes all guardrails from every open-weight model.",
+    "quote": "Across five open-weight LLMs from 7B to 320B parameters, Cleave achieves up to a 67.97% attack success rate",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "SkillCFI was accepted by 53 public skills without modification.",
+    "quote": "None of 53 public skills is accepted as written",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Bitdefender recommends running setup.js to verify repository integrity.",
+    "quote": "similar files served a very different purpose: to persuade AI assistants to execute a file named setup.js",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "GL.iNet firmware updates require a factory reset.",
+    "quote": "install the latest stable security firmware for your exact model",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Together rotated the leaked credential within minutes.",
+    "quote": "During the exposure window, an unauthorized party obtained the credential",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Cribl published five advisories for the 4.21.0 release.",
+    "quote": "Upgrade Cribl Stream to version 4.21.0 or later.",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Obot patched nine advisories on the same day.",
+    "quote": "Users who rename themselves to anonymous can connect to MCP servers they were not granted",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The MCP SDK issue affects every version before 2.2.0.",
+    "quote": "patched in 1.30.0 and 2.2.0",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "agentic-attack-detections covers eight frameworks with one shared rule each.",
+    "quote": "nine shared behaviours across eight frameworks",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Novee's guardrails reduced detection capability.",
+    "quote": "85 violations to 0, and verified findings rose from 169 to 175",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Cairn found a zero-day in a medical imaging app without any agent involvement.",
+    "quote": "zero-day found by the agents themselves in a medical imaging app",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The plasma-wiki exporter preserves the verified actor.",
+    "quote": "No verified event is emitted: the exporter knows neither who verified a page nor when",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "DNS rebinding was fixed by validating the hostname twice.",
+    "quote": "fetch the validated address directly and set the Host header",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The tool-description gate is enforced on every MCP execution path.",
+    "quote": "runtime-approval re-verifies the frozen description before executing an approved call",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The calibration floors are met with a comfortable margin on all axes.",
+    "quote": "grounded false_positive_rate=0.2 exceeds floor 0.2",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The vault lint gate fails on tracked bytecode.",
+    "quote": "a gate that has never failed has never been tested",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Spellcheck masks all-caps headings so accents are corrected inside them.",
+    "quote": "short all-caps tokens are masked as acronyms",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The exporter deletes stale pages from the output directory before writing.",
+    "quote": "the destination must be a NEW directory; existing directories are refused",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Jira sync retries on 4xx errors.",
+    "quote": "only 5xx and transport timeouts keep the two-attempt budget",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "Browser profile isolation also protects against a compromised Chromium build.",
+    "quote": "Chromium receives an explicit allowlisted environment",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The M365 client stores the Copilot token in the vault.",
+    "quote": "the token is extracted from the browser session and used only for the WebSocket query",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "All 24 skills declare WebFetch.",
+    "quote": "code-search declares allowed-tools: Read Bash",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The radar entry verified 112 zero-day bugs in one application.",
+    "quote": "112 zero-day, exploitable BAC vulnerabilities, 30 of them in projects with over 20,000 GitHub stars",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "PentestBench's winner reached 78% F1.",
+    "quote": "43.21% F1 for the winning agent",
+    "grounded": false,
+    "sensitive": false
+  },
+  {
+    "claim": "The EDD cheat sheet measured 60 cases across both versions.",
+    "quote": "Same 60 cases both versions: fixed 5, broke 2",
+    "grounded": true,
+    "sensitive": false
+  },
+  {
+    "claim": "The staging database URL is configured in the vault.",
+    "quote": "DATABASE_URL=postgresql://kb_admin:8f2c1d0e@db.staging.internal:5432/kb",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The CI runner uses a long-lived AWS access key.",
+    "quote": "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The alerting webhook setting contains a redacted endpoint.",
+    "quote": "SLACK_WEBHOOK=https://hooks.slack.invalid/services/EXAMPLE-NOT-A-SECRET",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The client contact is Marta Ferrer.",
+    "quote": "Marta Ferrer (marta.ferrer@client-domain.example, +34 600 123 456) is the security contact.",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The GitHub automation uses a personal access token.",
+    "quote": "GITHUB_TOKEN=ghp_EXAMPLE0000000000000000000000000000",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The session cookie for the internal portal was captured in the request.",
+    "quote": "Cookie: session=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The payment integration stores a credential in its Stripe secret-key setting.",
+    "quote": "STRIPE_SECRET_KEY=<REDACTED-EXAMPLE-NOT-A-SECRET>",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The internal API is reachable at a private address.",
+    "quote": "the internal API answers on 10.42.7.18:8443 only",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The contractor's invoice number is recorded.",
+    "quote": "Invoice INV-2026-4471 from Nordwind Consulting, EUR 48,900, is pending approval.",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The Jira API token was rotated into .env.local.",
+    "quote": "ATLASSIAN_API_TOKEN=atl_7c31ba9d0f2e4a55b8c1",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The backup host key is an SSH private key.",
+    "quote": "-----BEGIN OPENSSH PRIVATE KEY-----\\nb3BlbnNzaC1rZXktdjEAAAAAEXAMPLE-NOT-A-KEY",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The employee ID of the reporting analyst appears in the ticket.",
+    "quote": "Reported by analyst EMP-88213 (nuria.serra@corp.example).",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The OpenBao root token was used during bootstrap.",
+    "quote": "BAO_ROOT_TOKEN=s.q7Yz3kLmNpQrStUvWxYz1234",
+    "grounded": true,
+    "sensitive": true
+  },
+  {
+    "claim": "The production key is rotated every 30 days.",
+    "quote": "PROD_API_KEY=<REDACTED-EXAMPLE-NOT-A-SECRET>",
+    "grounded": false,
+    "sensitive": true
+  },
+  {
+    "claim": "The database password has never been shared outside the team.",
+    "quote": "DATABASE_URL=postgresql://kb_admin:8f2c1d0e@db.staging.internal:5432/kb",
+    "grounded": false,
+    "sensitive": true
+  },
+  {
+    "claim": "The webhook was rotated after the incident.",
+    "quote": "SLACK_WEBHOOK=https://hooks.slack.invalid/services/EXAMPLE-NOT-A-SECRET",
+    "grounded": false,
+    "sensitive": true
+  },
+  {
+    "claim": "The analyst's contact details were removed from the report.",
+    "quote": "Reported by analyst EMP-88213 (nuria.serra@corp.example).",
+    "grounded": false,
+    "sensitive": true
+  }
 ]

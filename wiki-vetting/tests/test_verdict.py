@@ -190,6 +190,62 @@ class RoutingActionTest(unittest.TestCase):
         self.assertEqual(self.route(probs), "human_review")
 
 
+class CalibrationSplitTest(unittest.TestCase):
+    """The tuning set must not be the measuring set.
+
+    2026-11-24 audit: calibration-set.json is what DEFAULT_THRESHOLDS came
+    from, so scoring all of it reports recall of the tuning data. The split is
+    content-addressed so it is stable, reproducible and needs no hand-kept
+    manifest.
+    """
+
+    @staticmethod
+    def split_fn():
+        from pathlib import Path as _Path
+        script = _Path(__file__).resolve().parent.parent / "scripts" / "calibration.py"
+        src = script.read_text(encoding="utf-8")
+        start = src.index("def split_holdout")
+        end = src.index("def check_floors")
+        ns = {}
+        exec(compile(src[start:end], "calibration-split", "exec"), ns)
+        return ns["split_holdout"]
+
+    def test_split_is_deterministic_and_partitions(self):
+        split_holdout = self.split_fn()
+        rows = [{"claim": f"c{i}", "quote": f"q{i}"} for i in range(100)]
+        tuning, holdout = split_holdout(rows)
+        self.assertEqual(len(tuning) + len(holdout), len(rows))
+        self.assertEqual(set(map(id, tuning)) & set(map(id, holdout)), set())
+        tuning2, holdout2 = split_holdout(rows)
+        self.assertEqual([r["claim"] for r in holdout], [r["claim"] for r in holdout2])
+
+    def test_editing_one_case_does_not_reshuffle_the_rest(self):
+        split_holdout = self.split_fn()
+        rows = [{"claim": f"c{i}", "quote": f"q{i}"} for i in range(60)]
+        _t1, before = split_holdout(rows)
+        changed = [dict(r) for r in rows]
+        changed[0]["quote"] = "edited"
+        _t2, after = split_holdout(changed)
+        untouched_before = {r["claim"] for r in before} - {"c0"}
+        untouched_after = {r["claim"] for r in after} - {"c0"}
+        self.assertEqual(untouched_before, untouched_after)
+
+    def test_real_set_has_a_holdout_big_enough_to_measure(self):
+        split_holdout = self.split_fn()
+        rows = json.loads(
+            (Path(__file__).resolve().parent / "calibration-set.json").read_text(encoding="utf-8"))
+        _tuning, holdout = split_holdout(rows)
+        share = len(holdout) / len(rows)
+        self.assertGreaterEqual(share, 0.2, "holdout under 20% is not a check")
+        self.assertLessEqual(share, 0.4, "holdout over 40% starves the tuning side")
+        self.assertGreaterEqual(
+            sum(1 for r in holdout if r["grounded"] is False), 10,
+            "the holdout needs >=10 negatives to carry the FPR floor")
+        self.assertGreaterEqual(
+            sum(1 for r in holdout if r.get("sensitive")), 5,
+            "the holdout needs several secrets to carry the recall floor")
+
+
 class CalibrationIntervalTest(unittest.TestCase):
     """A floor on 3 items is a coin toss; the interval must say so.
 
@@ -253,19 +309,45 @@ class CalibrationIntervalTest(unittest.TestCase):
 
 
 class CalibrationSetTest(unittest.TestCase):
-    def test_set_is_balanced_and_labelled(self):
-        rows = json.loads(
-            (Path(__file__).resolve().parent / "calibration-set.json").read_text(encoding="utf-8")
-        )
-        self.assertGreaterEqual(len(rows), 20)
-        negatives = [r for r in rows if r["grounded"] is False]
-        positives = [r for r in rows if r["grounded"] is True]
-        self.assertEqual(len(negatives), 10)
-        self.assertGreaterEqual(len(positives), 10)
-        self.assertGreaterEqual(len([r for r in rows if r.get("sensitive")]), 3)
-        for row in rows:
+    """The set must be big enough on each gated axis for the floor to mean
+    something: a floor needs >=10 items on its axis (2026-11-24 audit), and
+    one flip must not be able to swing it by more than a few points.
+    """
+
+    def setUp(self):
+        self.rows = json.loads(
+            (Path(__file__).resolve().parent / "calibration-set.json").read_text(encoding="utf-8"))
+
+    def test_every_axis_is_large_enough_to_gate_on(self):
+        negatives = [r for r in self.rows if r["grounded"] is False]
+        positives = [r for r in self.rows if r["grounded"] is True]
+        secrets = [r for r in self.rows if r.get("sensitive")]
+        self.assertGreaterEqual(len(negatives), 30, "grounded FPR axis too small")
+        self.assertGreaterEqual(len(positives), 30, "grounded recall axis too small")
+        self.assertGreaterEqual(len(secrets), 15, "sensitive recall axis too small")
+
+    def test_one_flip_cannot_swing_a_floor(self):
+        negatives = sum(1 for r in self.rows if r["grounded"] is False)
+        secrets = sum(1 for r in self.rows if r.get("sensitive"))
+        self.assertLessEqual(100 / negatives, 5, "one false positive must cost <=5 pts")
+        self.assertLessEqual(100 / secrets, 10, "one lost secret must cost <=10 pts")
+
+    def test_rows_are_labelled_and_unique(self):
+        seen = set()
+        for row in self.rows:
             self.assertIn("claim", row)
             self.assertIn("quote", row)
+            self.assertIsInstance(row["grounded"], bool)
+            self.assertIsInstance(row.get("sensitive"), bool)
+            key = (row["claim"], row["quote"])
+            self.assertNotIn(key, seen, f"duplicate case: {row['claim'][:60]}")
+            seen.add(key)
+
+    def test_set_has_both_sides_of_every_axis(self):
+        for grounded in (True, False):
+            self.assertTrue(any(r["grounded"] is grounded for r in self.rows))
+        self.assertTrue(any(r.get("sensitive") for r in self.rows))
+        self.assertTrue(any(not r.get("sensitive") for r in self.rows))
 
 
 class FakeResponse:

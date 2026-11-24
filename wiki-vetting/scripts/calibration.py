@@ -20,6 +20,7 @@ Exit codes:
 """
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -126,6 +127,25 @@ def axis_intervals(metrics):
     return out
 
 
+def split_holdout(rows, percent=30):
+    """Deterministic content-addressed split: tuning vs holdout.
+
+    A case's side depends only on its own claim+quote, so editing one case
+    never reshuffles the rest, and the holdout never has to be maintained by
+    hand. Why it matters: `calibration-set.json` is what DEFAULT_THRESHOLDS
+    came from, so scoring the full set reports recall of the tuning data, not
+    generalisation. Measuring the holdout alone is the honest number.
+    """
+    import hashlib
+
+    holdout, tuning = [], []
+    for row in rows:
+        key = f"{row.get('claim', '')}\0{row.get('quote', '')}".encode("utf-8")
+        side = int(hashlib.sha256(key).hexdigest()[:8], 16) % 100
+        (holdout if side < percent else tuning).append(row)
+    return tuning, holdout
+
+
 def check_floors(metrics):
     failures = []
     fpr = metrics["grounded"]["false_positive_rate"]
@@ -145,6 +165,11 @@ def main(argv=None):
     _vet.reject_literal_api_key_args(list(sys.argv[1:] if argv is None else argv))
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--set", required=True, help="Labelled JSON array of claims with labels.")
+    parser.add_argument(
+        "--split", choices=("holdout", "tuning", "full"), default="holdout",
+        help="which side of the deterministic 70/30 split to score"
+             " (default holdout: the tuning side fixed the thresholds)",
+    )
     parser.add_argument("--json", action="store_true", help="Machine-readable output.")
     parser.add_argument("--model", default=_vet._CFG.get("model") or "clef-flash:9b")
     parser.add_argument("--endpoint", default=_vet._CFG.get("endpoint") or "http://127.0.0.1:11434")
@@ -171,6 +196,11 @@ def main(argv=None):
         raise SystemExit(f"error: invalid JSON in {path}: {exc}")
     if not isinstance(rows, list) or not rows:
         raise SystemExit("error: calibration set must be a non-empty JSON array")
+    tuning_rows, holdout_rows = split_holdout(rows)
+    scored_rows = {"holdout": holdout_rows, "tuning": tuning_rows, "full": rows}[args.split]
+    if not scored_rows:
+        raise SystemExit(f"error: the {args.split} side of the split is empty")
+    rows = scored_rows
 
     labels = []
     claims = []
@@ -215,6 +245,8 @@ def main(argv=None):
         "thresholds": thresholds,
         "band": band,
         "cases": len(results),
+        "split": args.split,
+        "set_size": {"tuning": len(tuning_rows), "holdout": len(holdout_rows)},
         "metrics": metrics,
         "floors": FLOORS,
         "intervals": intervals,
@@ -224,7 +256,8 @@ def main(argv=None):
         print(json.dumps(payload, indent=2, ensure_ascii=False))
     else:
         g, s = metrics["grounded"], metrics["sensitive"]
-        print(f"model={args.model} cases={len(results)} band=±{band:.2f}")
+        print(f"model={args.model} cases={len(results)} split={args.split} "
+              f"(tuning {len(tuning_rows)} / holdout {len(holdout_rows)}) band=±{band:.2f}")
         print(
             f"grounded   precision={g['precision']} recall={g['recall']} "
             f"FPR={g['false_positive_rate']}  (tp={g['tp']} tn={g['tn']} fp={g['fp']} fn={g['fn']})"

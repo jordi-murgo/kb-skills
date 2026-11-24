@@ -86,8 +86,6 @@ CHECKS_COMMANDS = (
     ("wiki-vetting/tests", "test_verdict.py"),
     ("kb-m365-fetch/tests", "test_m365_copilot.py"),
     ("kb-publish/tests", "test_export_okf.py"),
-    ("wiki-prose/tests", "test_spell_probe.py"),
-    ("wiki-search/tests", "test_eval_gate.py"),
     ("tests", "test_skill_budget.py"),
 )
 

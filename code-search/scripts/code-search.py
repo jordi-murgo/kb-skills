@@ -774,6 +774,80 @@ def query_index(config, text, mode="hybrid", top=5):
     return {"ok": True, "mode": mode, "model": meta["model"], "results": results}
 
 
+def eval_index(config, dataset_path, mode="hybrid", top=10, min_mrr=None,
+               min_recall=None, baseline=None):
+    """Score retrieval against the repo's gold set; a gate only when asked.
+
+    The gold set (`tests/gold-code.json`) existed with no consumer until
+    2026-11-24: the metrics were computed by whatever ad-hoc script the
+    experiment wrote, so the script decided the result. This is the frozen
+    scorer, with `--min-mrr`/`--min-recall-at` floors and per-query flips
+    against a previous --json run.
+    """
+    try:
+        data = json.loads(Path(dataset_path).read_text(encoding="utf-8"))
+    except OSError as error:
+        raise CodeSearchError(f"cannot read gold set: {error}") from None
+    except json.JSONDecodeError as error:
+        raise CodeSearchError(f"gold set is not valid JSON: {error}") from None
+    queries = data.get("queries") if isinstance(data, dict) else None
+    if not isinstance(queries, list) or not queries:
+        raise CodeSearchError("gold set must be {name, queries: [{id, text, relevant}]}")
+    per_query, rr_sum, hit_sum = [], 0.0, 0
+    for query in queries:
+        text = query.get("text")
+        relevant = query.get("relevant") or []
+        if not text or not relevant:
+            raise CodeSearchError(f"gold query {query.get('id')} needs text and relevant[]")
+        result = query_index(config, text, mode, top)
+        paths = list(dict.fromkeys(r["path"] for r in result["results"]))
+        first = next((i + 1 for i, path in enumerate(paths) if path in relevant), None)
+        rr = 1.0 / first if first else 0.0
+        rr_sum += rr
+        hit_sum += 1 if first else 0
+        per_query.append({
+            "id": query.get("id"), "category": query.get("category"),
+            "retrieved": paths, "first_relevant_rank": first, "rr": round(rr, 4),
+        })
+    mrr = rr_sum / len(per_query)
+    recall = hit_sum / len(per_query)
+    out = {
+        "ok": True, "dataset": data.get("name"), "mode": mode, "top": top,
+        "num_queries": len(per_query), "mrr": round(mrr, 4),
+        "recall": round(recall, 4), f"recall_at_{top}": round(recall, 4),
+        "per_query": per_query,
+    }
+    flips = None
+    if baseline:
+        try:
+            base = json.loads(Path(baseline).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise CodeSearchError(f"cannot read baseline: {error}") from None
+        before = {q.get("id"): bool(q.get("first_relevant_rank"))
+                  for q in base.get("per_query") or []}
+        after = {q["id"]: bool(q["first_relevant_rank"]) for q in per_query}
+        shared = [qid for qid in after if qid in before]
+        flips = {
+            "fixed": [q for q in shared if after[q] and not before[q]],
+            "broke": [q for q in shared if before[q] and not after[q]],
+            "unchanged": sum(1 for q in shared if after[q] == before[q]),
+        }
+        out["flips"] = flips
+    failures = []
+    if min_mrr is not None and mrr < min_mrr:
+        failures.append(f"MRR {mrr:.4f} < --min-mrr {min_mrr}")
+    if min_recall is not None and recall < min_recall:
+        failures.append(f"recall@{top} {recall:.4f} < --min-recall-at {min_recall}")
+    if flips is not None and min_mrr is not None and len(flips["broke"]) > len(flips["fixed"]):
+        failures.append(f"flips vs baseline: {len(flips['broke'])} broke > "
+                        f"{len(flips['fixed'])} fixed (a higher mean that breaks hits "
+                        "is a trade-off)")
+    if failures:
+        out["ok"] = False
+        out["failures"] = failures
+    return out
+
+
 def positive_top(value):
     try:
         top = int(value)
@@ -798,6 +872,21 @@ def print_result(result, as_json, command):
         for item in result["results"]:
             print(f"{item['path']}:{item['start_line']}-{item['end_line']}  score={item['score']:.6f}")
             print(item["preview"])
+    elif command == "eval":
+        print(f"dataset {result['dataset']}: {result['num_queries']} queries, "
+              f"mode={result['mode']}, top={result['top']}")
+        print(f"  MRR {result['mrr']:.4f}  recall@{result['top']} {result['recall']:.4f}")
+        for q in result["per_query"]:
+            rank = q["first_relevant_rank"] or "-"
+            print(f"  {str(q['id']):<12} {str(rank):>3}  {q.get('category') or ''}")
+        if result.get("flips"):
+            f = result["flips"]
+            print(f"  flips vs baseline: fixed {len(f['fixed'])} broke {len(f['broke'])} "
+                  f"unchanged {f['unchanged']}")
+            for qid in f["broke"]:
+                print(f"    broke: {qid}")
+        for failure in result.get("failures") or []:
+            print(f"REGRESSION: {failure}", file=sys.stderr)
     else:
         print(f"{result['files']} files, {result['chunks']} chunks, {result['embedded']} embedded; "
               f"model={result['model']}, dimensions={result['dimensions']}")
@@ -816,13 +905,22 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", help="Explicit vault root (before the subcommand)")
     commands = parser.add_subparsers(dest="command", required=True)
-    for command in ("doctor", "build", "status", "query"):
+    for command in ("doctor", "build", "status", "query", "eval"):
         subparser = commands.add_parser(command)
         subparser.add_argument("--json", action="store_true")
-        if command == "query":
-            subparser.add_argument("text")
+        if command in ("query", "eval"):
             subparser.add_argument("--mode", choices=("hybrid", "vector", "bm25"), default="hybrid")
             subparser.add_argument("--top", type=positive_top, default=5)
+        if command == "query":
+            subparser.add_argument("text")
+        if command == "eval":
+            subparser.add_argument("dataset", help="gold set JSON: {name, queries:[{id, text, relevant[]}]}")
+            subparser.add_argument("--min-mrr", type=float, default=None,
+                                   help="exit 1 below this MRR (no default: a gate has to be asked for)")
+            subparser.add_argument("--min-recall-at", type=float, default=None,
+                                   help="exit 1 below this recall@top")
+            subparser.add_argument("--baseline", default=None,
+                                   help="previous --json run: report fixed/broke flips")
     args = parser.parse_args(argv)
     try:
         root = find_root(args.root)
@@ -834,9 +932,16 @@ def main(argv=None):
                 result = build_index(config)
             elif args.command == "status":
                 result = index_status(config)
+            elif args.command == "eval":
+                result = eval_index(config, args.dataset, args.mode, args.top,
+                                    getattr(args, "min_mrr", None),
+                                    getattr(args, "min_recall_at", None),
+                                    getattr(args, "baseline", None))
             else:
                 result = query_index(config, args.text, args.mode, args.top)
         print_result(result, args.json, args.command)
+        if args.command == "eval" and not result["ok"]:
+            return 1
         return 0 if result["ok"] else 2
     except (CodeSearchError, OSError, UnicodeError, ValueError, struct.error) as error:
         missing = [error.record()] if isinstance(error, MissingDependency) else []
