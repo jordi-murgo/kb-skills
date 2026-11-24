@@ -116,3 +116,22 @@ python3 .agents/skills/wiki-prose/scripts/prose_check.py --max-words 30 wiki/log
 Use it on drafts and on pages you are about to edit; findings are hints, and a
 page may keep a "finding" when the sentence earns it (a real list of three, a
 quoted slop example).
+
+`scripts/spell_probe.py` — spell_probe, the orthography companion of
+prose_check: detect-only, never rewrites. It runs the **system** hunspell
+(`-l` unknown-word list) over the prose, with every protected fragment
+removed before detection: fenced and inline code, wikilinks, markdown links,
+`^[...]` citations, callouts, URLs, e-mail, paths and digit-bearing tokens
+never reach the dictionary, so they cannot produce findings. Frontmatter is
+skipped; language is declared (CLI `--lang`, then frontmatter `lang:`, then
+default `ca`) — never detected. A per-vault glossary of project terms lives
+under `.cache/spell-probe/glossary-<lang>.txt`. Hunspell and its LGPL/GPL
+dictionaries are never bundled; a missing binary or dictionary exits 2 with
+an explicit message — never a silent pass. The agent applies corrections
+with the diff in view; this probe only points.
+
+```bash
+python3 .agents/skills/wiki-prose/scripts/spell_probe.py --lang ca wiki/hot.md
+python3 .agents/skills/wiki-prose/scripts/spell_probe.py --lang ca --json wiki/entities/x.md
+```
+
